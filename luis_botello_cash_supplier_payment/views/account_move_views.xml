@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Smart button en la factura de proveedor:
+        Muestra cuántas salidas de caja POS se han generado desde esta factura.
+    -->
+    <record id="account_move_form_inherit_pos_cash_out" model="ir.ui.view">
+        <field name="name">account.move.form.pos.cash.out</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[hasclass('oe_button_box')]" position="inside">
+                <button
+                    name="action_view_pos_cash_outs"
+                    type="object"
+                    class="oe_stat_button"
+                    icon="fa-cash-register"
+                    invisible="move_type not in ('in_invoice', 'in_refund') or pos_cash_out_count == 0"
+                >
+                    <field name="pos_cash_out_count" widget="statinfo" string="Salidas POS"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+</odoo>

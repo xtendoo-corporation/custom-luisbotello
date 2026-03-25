@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Smart button en el formulario de pago:
+        Muestra un enlace a la salida de caja POS si existe.
+    -->
+    <record id="account_payment_form_inherit_pos_cash_out" model="ir.ui.view">
+        <field name="name">account.payment.form.pos.cash.out</field>
+        <field name="model">account.payment</field>
+        <field name="inherit_id" ref="account.view_account_payment_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[hasclass('oe_button_box')]" position="inside">
+                <button
+                    name="action_view_pos_cash_out"
+                    type="object"
+                    class="oe_stat_button"
+                    icon="fa-cash-register"
+                    invisible="not pos_cash_out_id"
+                >
+                    <div class="o_stat_info">
+                        <span class="o_stat_text">Salida POS</span>
+                    </div>
+                </button>
+            </xpath>
+            <!-- Campo oculto necesario para el invisible del botón -->
+            <xpath expr="//sheet" position="inside">
+                <field name="pos_cash_out_id" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
