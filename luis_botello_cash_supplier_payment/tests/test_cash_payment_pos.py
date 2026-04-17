@@ -12,13 +12,13 @@ class TestCashPaymentPos(CashSupplierPaymentCommon):
         """Pago en efectivo con una sesión abierta -> Salida POS creada."""
         session = self._open_pos_session()
         invoice = self._create_supplier_invoice(amount=300.0)
-        
+
         self._register_payment(invoice, journal=self.cash_journal, create_pos_cash_out=True)
-        
+
         payments = self._get_payment_for_invoice(invoice)
         self.assertEqual(len(payments), 1)
         payment = payments[0]
-        
+
         self.assertTrue(payment.pos_cash_out_id, "Debe existir salida POS")
         self.assertAlmostEqual(abs(payment.pos_cash_out_id.amount), 300.0)
         self.assertEqual(payment.pos_cash_out_id.supplier_invoice_id, invoice)
@@ -27,50 +27,90 @@ class TestCashPaymentPos(CashSupplierPaymentCommon):
         """Pago en efectivo sin sesiones abiertas -> UserError."""
         # Asegurar cero sesiones abiertas
         self.env['pos.session'].search([('state', '=', 'opened'), ('company_id', '=', self.company.id)]).sudo().write({'state': 'closed'})
-        
+
         invoice = self._create_supplier_invoice(amount=100.0)
         with self.assertRaises(UserError):
             self._register_payment(invoice, create_pos_cash_out=True)
 
     def test_03_multiple_sessions_error(self):
-        """Más de una sesión abierta -> UserError."""
+        """Con varias sesiones abiertas, debe elegir la que corresponda al diario."""
+        expected_session = self._open_pos_session()
+        other_cash_journal = self._create_cash_journal('Test Caja 2', 'TCJ2')
+        other_config, _other_payment_method = self._create_pos_config_for_cash_journal(
+            other_cash_journal,
+            'TPV 2',
+        )
+        self._open_pos_session(pos_config=other_config)
+
+        invoice = self._create_supplier_invoice(amount=100.0)
+        self._register_payment(
+            invoice,
+            journal=self.cash_journal,
+            create_pos_cash_out=True,
+        )
+
+        payment = self._get_payment_for_invoice(invoice)
+        self.assertEqual(payment.pos_cash_out_id.pos_session_id, expected_session)
+        self.assertEqual(payment.pos_cash_out_id.journal_id, self.cash_journal)
+
+    def test_04_multiple_sessions_same_journal_error(self):
+        """Si dos sesiones abiertas usan el mismo diario, debe seguir fallando."""
         self._open_pos_session()
         other_config = self.env['pos.config'].sudo().create({
-            'name': 'TPV 2', 'company_id': self.company.id, 'journal_id': self.cash_journal.id
+            'name': 'TPV Compartido',
+            'company_id': self.company.id,
+            'invoice_journal_id': self.env['account.journal'].search(
+                [('type', '=', 'sale'), ('company_id', '=', self.company.id)],
+                limit=1,
+            ).id,
+            'payment_method_ids': [(6, 0, [self.pos_payment_method.id])],
         })
         self._open_pos_session(pos_config=other_config)
-        
+
         invoice = self._create_supplier_invoice(amount=100.0)
         with self.assertRaises(UserError):
-            self._register_payment(invoice, create_pos_cash_out=True)
+            self._register_payment(invoice, journal=self.cash_journal, create_pos_cash_out=True)
 
-    def test_04_check_unchecked_no_out(self):
+    def test_05_no_matching_session_for_journal_error(self):
+        """Si no hay una sesión abierta para el diario seleccionado, debe avisar."""
+        other_cash_journal = self._create_cash_journal('Test Caja 3', 'TCJ3')
+        other_config, _other_payment_method = self._create_pos_config_for_cash_journal(
+            other_cash_journal,
+            'TPV 3',
+        )
+        self._open_pos_session(pos_config=other_config)
+
+        invoice = self._create_supplier_invoice(amount=100.0)
+        with self.assertRaises(UserError):
+            self._register_payment(invoice, journal=self.cash_journal, create_pos_cash_out=True)
+
+    def test_06_check_unchecked_no_out(self):
         """Check desmarcado -> No se crea salida POS."""
         self._open_pos_session()
         invoice = self._create_supplier_invoice(amount=100.0)
         self._register_payment(invoice, create_pos_cash_out=False)
-        
+
         payment = self._get_payment_for_invoice(invoice)
         self.assertFalse(payment.pos_cash_out_id)
 
-    def test_05_bank_payment_no_out(self):
+    def test_07_bank_payment_no_out(self):
         """Pago por banco -> No se crea salida POS (aunque check=True)."""
         self._open_pos_session()
         invoice = self._create_supplier_invoice(amount=100.0)
         self._register_payment(invoice, journal=self.bank_journal, create_pos_cash_out=True)
-        
+
         payment = self._get_payment_for_invoice(invoice)
         self.assertFalse(payment.pos_cash_out_id)
 
-    def test_07_anti_duplicate(self):
+    def test_08_anti_duplicate(self):
         """Un pago no debe tener dos salidas."""
         self._open_pos_session()
         invoice = self._create_supplier_invoice(amount=100.0)
         self._register_payment(invoice, create_pos_cash_out=True)
-        
+
         payment = self._get_payment_for_invoice(invoice)
         self.assertTrue(payment.pos_cash_out_id)
-        
+
         # Intentar forzar otra salida vía wizard sobre el mismo invoice (residual será 0)
         with self.assertRaises(UserError):
             self.env['account.payment.register'].with_context(
@@ -80,11 +120,11 @@ class TestCashPaymentPos(CashSupplierPaymentCommon):
                 'create_pos_cash_out': True
             }).action_create_payments()
 
-    def test_08_partial_payment(self):
+    def test_09_partial_payment(self):
         """Pago parcial -> Salida por importe parcial."""
         self._open_pos_session()
         invoice = self._create_supplier_invoice(amount=100.0)
-        
+
         self.env['account.payment.register'].with_context(
             active_model='account.move', active_ids=invoice.ids
         ).create({
@@ -92,16 +132,16 @@ class TestCashPaymentPos(CashSupplierPaymentCommon):
             'journal_id': self.cash_journal.id,
             'create_pos_cash_out': True
         }).action_create_payments()
-        
+
         payment = self._get_payment_for_invoice(invoice)
         self.assertAlmostEqual(abs(payment.pos_cash_out_id.amount), 40.0)
 
-    def test_09_multi_invoice(self):
+    def test_10_multi_invoice(self):
         """Pago en lote -> Una salida por el total."""
         self._open_pos_session()
         inv1 = self._create_supplier_invoice(amount=10.0)
         inv2 = self._create_supplier_invoice(amount=20.0)
-        
+
         self.env['account.payment.register'].with_context(
             active_model='account.move', active_ids=[inv1.id, inv2.id]
         ).create({
@@ -109,11 +149,11 @@ class TestCashPaymentPos(CashSupplierPaymentCommon):
             'create_pos_cash_out': True,
             'group_payment': True
         }).action_create_payments()
-        
+
         payment = self._get_payment_for_invoice(inv1)
         self.assertAlmostEqual(abs(payment.pos_cash_out_id.amount), 30.0)
 
-    def test_10_refund_safe(self):
+    def test_11_refund_safe(self):
         """Abonos (Refunds) -> Check desmarcado por defecto/seguro."""
         self._open_pos_session()
         refund = self.env['account.move'].sudo().create({
@@ -123,19 +163,19 @@ class TestCashPaymentPos(CashSupplierPaymentCommon):
             'invoice_line_ids': [(0, 0, {'name': 'x', 'quantity': 1, 'price_unit': 10.0, 'account_id': self.expense_account.id})],
         })
         refund.action_post()
-        
+
         wizard = self.env['account.payment.register'].with_context(
             active_model='account.move', active_ids=refund.ids
         ).create({'journal_id': self.cash_journal.id})
-        
+
         self.assertFalse(wizard.create_pos_cash_out)
 
-    def test_11_closed_session(self):
+    def test_12_closed_session(self):
         """Sesión cerrando/cerrada -> UserError."""
         session = self._open_pos_session()
         session.sudo().write({'state': 'closing_control'})
         session.flush_recordset()
-        
+
         invoice = self._create_supplier_invoice(amount=100.0)
         with self.assertRaises(UserError):
             self._register_payment(invoice, create_pos_cash_out=True)

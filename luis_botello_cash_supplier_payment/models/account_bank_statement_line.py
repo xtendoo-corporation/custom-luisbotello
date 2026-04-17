@@ -25,3 +25,39 @@ class AccountBankStatementLine(models.Model):
         copy=False,
         help='Pago contable que originó esta salida de caja en el TPV.',
     )
+
+    def action_open_pos_cash_outs(self, action_name=None):
+        """Abre las salidas POS en las vistas compactas del módulo."""
+        action_name = action_name or 'Salidas de caja POS'
+        list_view = self.env.ref(
+            'luis_botello_cash_supplier_payment.view_account_bank_statement_line_pos_cash_out_list'
+        )
+        form_view = self.env.ref(
+            'luis_botello_cash_supplier_payment.view_account_bank_statement_line_pos_cash_out_form'
+        )
+
+        action = {
+            'type': 'ir.actions.act_window',
+            'name': action_name,
+            'res_model': 'account.bank.statement.line',
+            'target': 'current',
+            'context': {
+                'create': False,
+                'edit': False,
+                'delete': False,
+            },
+        }
+        if len(self) == 1:
+            action.update({
+                'view_mode': 'form',
+                'views': [(form_view.id, 'form')],
+                'res_id': self.id,
+            })
+        else:
+            action.update({
+                'view_mode': 'list,form',
+                'views': [(list_view.id, 'list'), (form_view.id, 'form')],
+                'domain': [('id', 'in', self.ids)],
+            })
+        return action
+

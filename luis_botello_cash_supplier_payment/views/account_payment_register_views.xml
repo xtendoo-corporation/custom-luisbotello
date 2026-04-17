@@ -10,17 +10,26 @@
         <field name="model">account.payment.register</field>
         <field name="inherit_id" ref="account.view_account_payment_register_form"/>
         <field name="arch" type="xml">
-            <!-- Insertar el check debajo del campo de importe -->
-            <xpath expr="//field[@name='amount']" position="after">
+            <!-- Insertar la opción debajo de la fecha, en una fila propia -->
+            <xpath expr="//field[@name='payment_date']" position="after">
                 <field name="is_cash_payment" invisible="1"/>
                 <field name="is_supplier_invoice" invisible="1"/>
-                <field
-                    name="create_pos_cash_out"
-                    widget="boolean_toggle"
+                <label
+                    for="create_pos_cash_out"
+                    string="Crear salida de caja en TPV"
                     invisible="not is_cash_payment or not is_supplier_invoice"
-                    help="Si está marcado, al registrar el pago en efectivo se generará
-una salida de caja en la sesión de TPV abierta de la misma compañía."
                 />
+                <div invisible="not is_cash_payment or not is_supplier_invoice">
+                    <field
+                        name="create_pos_cash_out"
+                        widget="boolean_toggle"
+                        class="oe_inline"
+                        help="Si está marcado, al registrar el pago en efectivo se generará una salida de caja en la sesión de TPV abierta que use ese diario."
+                    />
+                    <div class="text-muted mt-1">
+                        Si activas esta opción, al crear el pago en efectivo se registrará automáticamente una salida de caja en la sesión de TPV abierta asociada al diario seleccionado.
+                    </div>
+                </div>
             </xpath>
         </field>
     </record>

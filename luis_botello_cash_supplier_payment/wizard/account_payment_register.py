@@ -98,17 +98,20 @@ class AccountPaymentRegister(models.TransientModel):
 
     # ── POS session helper ────────────────────────────────────────────────────
 
-    def _get_open_pos_session(self, company):
+    def _get_open_pos_session(self, company, journal=None):
         """
         Busca la sesión de TPV abierta válida para la compañía indicada.
 
         Política:
-        - Exactamente 1 sesión abierta → devuelve la sesión.
+        - Si se indica diario, se filtran únicamente las sesiones abiertas
+          compatibles con ese diario de efectivo.
+        - Exactamente 1 sesión candidata → devuelve la sesión.
         - 0 sesiones abiertas → UserError.
-        - >1 sesiones abiertas → UserError (para evitar imputar a caja incorrecta).
+        - >1 sesiones candidatas → UserError (para evitar imputar a caja incorrecta).
 
         Args:
             company: res.company de la factura/pago.
+            journal: account.journal de efectivo usado en el pago.
 
         Returns:
             pos.session (singleton)
@@ -127,15 +130,50 @@ class AccountPaymentRegister(models.TransientModel):
                 'Abre una sesión de TPV e intenta registrar el pago de nuevo, '
                 'o desmarca la opción "Crear salida en la sesión actual".'
             ) % company.name)
-        if len(open_sessions) > 1:
-            session_names = ', '.join(open_sessions.mapped('name'))
+        candidate_sessions = open_sessions
+        if journal:
+            candidate_sessions = open_sessions.filtered(
+                lambda session: (
+                    session.cash_journal_id == journal
+                    or journal in session.payment_method_ids.mapped('journal_id')
+                )
+            )
+            if not candidate_sessions:
+                session_names = ', '.join(open_sessions.mapped('name'))
+                raise UserError(_(
+                    'No se puede crear la salida de caja: no existe ninguna '
+                    'sesión de TPV abierta en la empresa "%(company)s" '
+                    'vinculada al diario "%(journal)s".\n\n'
+                    'Sesiones abiertas detectadas: %(sessions)s.\n\n'
+                    'Abre la sesión del TPV que use ese diario o desmarca la '
+                    'opción "Crear salida en la sesión actual".'
+                ) % {
+                    'company': company.name,
+                    'journal': journal.display_name,
+                    'sessions': session_names,
+                })
+
+        if len(candidate_sessions) > 1:
+            session_names = ', '.join(candidate_sessions.mapped('name'))
+            if journal:
+                raise UserError(_(
+                    'No se puede crear la salida de caja: hay más de una sesión '
+                    'de TPV abierta en la empresa "%(company)s" para el diario '
+                    '"%(journal)s" (%(sessions)s).\n\n'
+                    'Cierra las sesiones sobrantes de ese diario e intenta '
+                    'registrar el pago de nuevo.'
+                ) % {
+                    'company': company.name,
+                    'journal': journal.display_name,
+                    'sessions': session_names,
+                })
             raise UserError(_(
                 'No se puede crear la salida de caja: existe más de una sesión '
                 'de TPV abierta en la empresa "%s" (%s).\n\n'
                 'Cierra las sesiones sobrantes hasta dejar solo una abierta '
                 'e intenta registrar el pago de nuevo.'
             ) % (company.name, session_names))
-        return open_sessions
+        return candidate_sessions
 
     # ── POS cash-out creation ─────────────────────────────────────────────────
 
@@ -145,14 +183,15 @@ class AccountPaymentRegister(models.TransientModel):
         Incluye número de factura, proveedor y fecha para facilitar la auditoría.
         """
         parts = [_('Pago factura proveedor')]
-        if invoice.name and invoice.name != '/':
-            parts.append(invoice.name)
+        invoice_name = (invoice.name or '').strip()
+        if invoice_name and invoice_name != '/':
+            parts.append(invoice_name)
         if invoice.partner_id:
             parts.append(invoice.partner_id.display_name)
         if invoice.invoice_date:
             parts.append(invoice.invoice_date.strftime('%d/%m/%Y'))
-        payment_ref = getattr(payment, 'ref', '') or getattr(payment, 'memo', '')
-        if payment_ref:
+        payment_ref = (getattr(payment, 'ref', '') or getattr(payment, 'memo', '') or '').strip()
+        if payment_ref and payment_ref != invoice_name:
             parts.append(payment_ref)
         return ' | '.join(parts)
 
@@ -175,9 +214,10 @@ class AccountPaymentRegister(models.TransientModel):
         """
         description = self._build_cash_out_description(invoice, payment)
 
-        # El diario de la sesión POS contiene la cuenta de efectivo
+        statement_journal = payment.journal_id or session.cash_journal_id
+
         statement_line = self.env['account.bank.statement.line'].create({
-            'journal_id': session.cash_journal_id.id,
+            'journal_id': statement_journal.id,
             'amount': -abs(payment.amount),          # salida → negativo
             'date': payment.date or fields.Date.today(),
             'payment_ref': description,
@@ -217,7 +257,7 @@ class AccountPaymentRegister(models.TransientModel):
             invoice = self.line_ids.move_id.filtered(
                 lambda m: m.move_type == 'in_invoice'
             )[:1]
-            pos_session = self._get_open_pos_session(self.env.company)
+            pos_session = self._get_open_pos_session(self.company_id, self.journal_id)
 
         # Crear los pagos contables (super)
         result = super().action_create_payments()

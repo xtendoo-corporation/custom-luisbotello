@@ -14,7 +14,7 @@
                     name="action_view_pos_cash_outs"
                     type="object"
                     class="oe_stat_button"
-                    icon="fa-cash-register"
+                    icon="fa-money"
                     invisible="move_type not in ('in_invoice', 'in_refund') or pos_cash_out_count == 0"
                 >
                     <field name="pos_cash_out_count" widget="statinfo" string="Salidas POS"/>

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api
+from odoo import models, fields
 
 
 class AccountPayment(models.Model):
@@ -23,10 +23,4 @@ class AccountPayment(models.Model):
     def action_view_pos_cash_out(self):
         """Apertura del smart button en el pago → salida de caja POS."""
         self.ensure_one()
-        return {
-            'type': 'ir.actions.act_window',
-            'name': 'Salida de caja POS',
-            'res_model': 'account.bank.statement.line',
-            'view_mode': 'form',
-            'res_id': self.pos_cash_out_id.id,
-        }
+        return self.pos_cash_out_id.action_open_pos_cash_outs('Salida de caja POS')

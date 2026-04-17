@@ -8,9 +8,10 @@ Proporciona:
 - Configuración y sesión de TPV
 - Helpers para crear facturas de proveedor y registrar pagos
 """
+from uuid import uuid4
+
 from odoo import fields
 from odoo.tests.common import TransactionCase
-from odoo.exceptions import UserError
 
 
 class CashSupplierPaymentCommon(TransactionCase):
@@ -22,17 +23,6 @@ class CashSupplierPaymentCommon(TransactionCase):
 
         cls.env = cls.env(context=dict(cls.env.context, tracking_disable=True))
         cls.company = cls.env.company
-
-        # ── Diarios ────────────────────────────────────────────────────────────
-        cls.cash_journal = cls.env['account.journal'].search(
-            [('type', '=', 'cash'), ('company_id', '=', cls.company.id)],
-            limit=1,
-        )
-        if not cls.cash_journal:
-            cls.cash_journal = cls.env['account.journal'].create({
-                'name': 'Test Caja', 'code': 'TCAJ', 'type': 'cash',
-                'company_id': cls.company.id,
-            })
 
         cls.bank_journal = cls.env['account.journal'].search(
             [('type', '=', 'bank'), ('company_id', '=', cls.company.id)],
@@ -70,32 +60,40 @@ class CashSupplierPaymentCommon(TransactionCase):
         )
         assert cls.expense_account, 'No expense account found in test company'
 
-        # ── Configuración POS ─────────────────────────────────────────────────
-        cls.pos_config = cls.env['pos.config'].search(
-            [('company_id', '=', cls.company.id)],
+        cls.cash_account = cls.env['account.account'].search(
+            [
+                ('account_type', '=', 'asset_cash'),
+                ('company_ids', 'in', cls.company.id),
+            ],
             limit=1,
         )
-        # Crear un método de pago para el TPV vinculado al diario de caja
+        assert cls.cash_account, 'No cash account found in test company'
+
+        # ── Diarios ────────────────────────────────────────────────────────────
+        cls.cash_journal = cls.env['account.journal'].create({
+            'name': 'Test Caja Pago Proveedor',
+            'code': f"L{uuid4().hex[:4].upper()}",
+            'type': 'cash',
+            'company_id': cls.company.id,
+            'default_account_id': cls.cash_account.id,
+        })
+
+        # ── Configuración POS ─────────────────────────────────────────────────
         cls.pos_payment_method = cls.env['pos.payment.method'].create({
-            'name': 'Efectivo TPV',
+            'name': 'Efectivo TPV Test Pago Proveedor',
             'journal_id': cls.cash_journal.id,
             'company_id': cls.company.id,
         })
 
-        if not cls.pos_config:
-            cls.pos_config = cls.env['pos.config'].create({
-                'name': 'TPV Test',
-                'company_id': cls.company.id,
-                'invoice_journal_id': cls.env['account.journal'].search(
-                    [('type', '=', 'sale'), ('company_id', '=', cls.company.id)],
-                    limit=1,
-                ).id,
-                'payment_method_ids': [(6, 0, [cls.pos_payment_method.id])],
-            })
-        else:
-            cls.pos_config.write({
-                'payment_method_ids': [(4, cls.pos_payment_method.id)],
-            })
+        cls.pos_config = cls.env['pos.config'].sudo().create({
+            'name': f'TPV Test - Pago proveedor cash {uuid4().hex[:6]}',
+            'company_id': cls.company.id,
+            'invoice_journal_id': cls.env['account.journal'].search(
+                [('type', '=', 'sale'), ('company_id', '=', cls.company.id)],
+                limit=1,
+            ).id,
+            'payment_method_ids': [(6, 0, [cls.pos_payment_method.id])],
+        })
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -119,10 +117,8 @@ class CashSupplierPaymentCommon(TransactionCase):
     def _open_pos_session(self, pos_config=None):
         """Abre una sesión POS y la devuelve de forma ultra-robusta para tests."""
         config = (pos_config or self.pos_config).sudo()
-        
-        # Asegurar que el config tiene el diario de caja correcto
-        if not config.journal_id or config.journal_id.id != self.cash_journal.id:
-            config.write({'journal_id': self.cash_journal.id})
+        if not config.payment_method_ids.filtered('is_cash_count'):
+            raise AssertionError('El TPV de prueba debe tener al menos un método de pago en efectivo.')
 
         # Crear y forzar apertura de sesión
         session = self.env['pos.session'].sudo().create({
@@ -134,6 +130,34 @@ class CashSupplierPaymentCommon(TransactionCase):
         # Flush para asegurar que la DB vea el estado antes del search del wizard
         session.flush_recordset()
         return session
+
+    def _create_cash_journal(self, name, code):
+        """Crea un diario de caja adicional para pruebas."""
+        return self.env['account.journal'].create({
+            'name': name,
+            'code': code,
+            'type': 'cash',
+            'company_id': self.company.id,
+            'default_account_id': self.cash_account.id,
+        })
+
+    def _create_pos_config_for_cash_journal(self, journal, name):
+        """Crea una configuración POS con un método de pago cash ligado al diario indicado."""
+        payment_method = self.env['pos.payment.method'].create({
+            'name': f'{name} - Efectivo',
+            'journal_id': journal.id,
+            'company_id': self.company.id,
+        })
+        config = self.env['pos.config'].sudo().create({
+            'name': name,
+            'company_id': self.company.id,
+            'invoice_journal_id': self.env['account.journal'].search(
+                [('type', '=', 'sale'), ('company_id', '=', self.company.id)],
+                limit=1,
+            ).id,
+            'payment_method_ids': [(6, 0, [payment_method.id])],
+        })
+        return config, payment_method
 
     def _close_pos_session(self, session):
         """Cierra la sesión POS indicada."""

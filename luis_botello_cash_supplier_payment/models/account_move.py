@@ -58,10 +58,4 @@ class AccountMove(models.Model):
         cash_out_lines = payments.filtered(
             lambda p: p.pos_cash_out_id
         ).mapped('pos_cash_out_id')
-        return {
-            'type': 'ir.actions.act_window',
-            'name': 'Salidas de caja POS',
-            'res_model': 'account.bank.statement.line',
-            'view_mode': 'list,form',
-            'domain': [('id', 'in', cash_out_lines.ids)],
-        }
+        return cash_out_lines.action_open_pos_cash_outs('Salidas de caja POS')

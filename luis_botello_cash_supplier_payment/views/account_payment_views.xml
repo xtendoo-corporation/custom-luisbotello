@@ -14,7 +14,7 @@
                     name="action_view_pos_cash_out"
                     type="object"
                     class="oe_stat_button"
-                    icon="fa-cash-register"
+                    icon="fa-money"
                     invisible="not pos_cash_out_id"
                 >
                     <div class="o_stat_info">
