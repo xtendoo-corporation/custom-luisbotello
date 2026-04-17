@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem
+        id="menu_luis_botello_tableros_root"
+        name="TPV Luis Botello"
+        parent="spreadsheet_dashboard.spreadsheet_dashboard_menu_root"
+        sequence="60"
+        groups="point_of_sale.group_pos_user,point_of_sale.group_pos_manager"/>
+
+    <menuitem
+        id="menu_luis_botello_pos_daily_report"
+        name="Pedidos por día y caja"
+        parent="menu_luis_botello_tableros_root"
+        action="action_luis_botello_pos_daily_report"
+        sequence="10"
+        groups="point_of_sale.group_pos_user,point_of_sale.group_pos_manager"/>
+
+    <menuitem
+        id="menu_luis_botello_pos_hourly_report"
+        name="Pedidos por tramo horario"
+        parent="menu_luis_botello_tableros_root"
+        action="action_luis_botello_pos_hourly_report"
+        sequence="20"
+        groups="point_of_sale.group_pos_user,point_of_sale.group_pos_manager"/>
+</odoo>
+

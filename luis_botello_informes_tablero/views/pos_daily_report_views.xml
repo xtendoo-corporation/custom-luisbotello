@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_luis_botello_pos_daily_report_search" model="ir.ui.view">
+        <field name="name">luis.botello.pos.daily.report.search</field>
+        <field name="model">luis.botello.pos.daily.report</field>
+        <field name="arch" type="xml">
+            <search string="Pedidos por día y caja">
+                <field name="report_date"/>
+                <field name="config_id"/>
+                <field name="company_id"/>
+                <filter name="filter_report_date" date="report_date"/>
+                <group>
+                    <filter name="group_report_date" string="Día" context="{'group_by': 'report_date'}"/>
+                    <filter name="group_config_id" string="Caja" context="{'group_by': 'config_id'}"/>
+                    <filter name="group_company_id" string="Compañía" context="{'group_by': 'company_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_luis_botello_pos_daily_report_list" model="ir.ui.view">
+        <field name="name">luis.botello.pos.daily.report.list</field>
+        <field name="model">luis.botello.pos.daily.report</field>
+        <field name="arch" type="xml">
+            <list string="Pedidos por día y caja" create="false" edit="false" delete="false" default_order="report_date desc, config_id asc">
+                <field name="report_date"/>
+                <field name="config_id"/>
+                <field name="order_count" sum="Pedidos"/>
+                <field name="amount_total" sum="Importe total"/>
+                <field name="average_ticket" string="Ticket medio"/>
+                <field name="company_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_luis_botello_pos_daily_report_pivot" model="ir.ui.view">
+        <field name="name">luis.botello.pos.daily.report.pivot</field>
+        <field name="model">luis.botello.pos.daily.report</field>
+        <field name="arch" type="xml">
+            <pivot string="Pedidos por día y caja">
+                <field name="report_date" type="row"/>
+                <field name="config_id" type="row"/>
+                <field name="order_count" type="measure"/>
+                <field name="amount_total" type="measure"/>
+                <field name="average_ticket" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_luis_botello_pos_daily_report_graph" model="ir.ui.view">
+        <field name="name">luis.botello.pos.daily.report.graph</field>
+        <field name="model">luis.botello.pos.daily.report</field>
+        <field name="arch" type="xml">
+            <graph string="Pedidos por día y caja" type="bar">
+                <field name="report_date"/>
+                <field name="config_id"/>
+                <field name="amount_total" type="measure"/>
+                <field name="order_count" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="action_luis_botello_pos_daily_report" model="ir.actions.act_window">
+        <field name="name">Pedidos por día y caja</field>
+        <field name="res_model">luis.botello.pos.daily.report</field>
+        <field name="view_mode">list,pivot,graph</field>
+        <field name="search_view_id" ref="view_luis_botello_pos_daily_report_search"/>
+        <field name="context">{'search_default_group_report_date': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Aún no hay pedidos TPV para analizar.
+            </p>
+            <p>
+                Este informe muestra, para cada día y caja, el número de pedidos,
+                el importe total y el ticket medio.
+            </p>
+        </field>
+    </record>
+</odoo>
+

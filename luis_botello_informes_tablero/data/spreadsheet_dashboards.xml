@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="spreadsheet_dashboard_group_luis_botello_pos" model="spreadsheet.dashboard.group">
+        <field name="name">Punto de venta</field>
+        <field name="sequence">80</field>
+    </record>
+
+    <record id="spreadsheet_dashboard_luis_botello_pos_daily" model="spreadsheet.dashboard">
+        <field name="name">Pedidos por día y caja</field>
+        <field name="spreadsheet_binary_data" type="base64" file="luis_botello_informes_tablero/data/files/pos_daily_dashboard.json"/>
+        <field name="main_data_model_ids" eval="[(4, ref('luis_botello_informes_tablero.model_luis_botello_pos_daily_report'))]"/>
+        <field name="sample_dashboard_file_path">luis_botello_informes_tablero/data/files/pos_daily_dashboard.json</field>
+        <field name="dashboard_group_id" ref="luis_botello_informes_tablero.spreadsheet_dashboard_group_luis_botello_pos"/>
+        <field name="group_ids" eval="[Command.link(ref('point_of_sale.group_pos_user')), Command.link(ref('point_of_sale.group_pos_manager'))]"/>
+        <field name="sequence">10</field>
+        <field name="is_published">True</field>
+    </record>
+
+    <record id="spreadsheet_dashboard_luis_botello_pos_hourly" model="spreadsheet.dashboard">
+        <field name="name">Pedidos por tramo horario</field>
+        <field name="spreadsheet_binary_data" type="base64" file="luis_botello_informes_tablero/data/files/pos_hourly_dashboard.json"/>
+        <field name="main_data_model_ids" eval="[(4, ref('luis_botello_informes_tablero.model_luis_botello_pos_hourly_report'))]"/>
+        <field name="sample_dashboard_file_path">luis_botello_informes_tablero/data/files/pos_hourly_dashboard.json</field>
+        <field name="dashboard_group_id" ref="luis_botello_informes_tablero.spreadsheet_dashboard_group_luis_botello_pos"/>
+        <field name="group_ids" eval="[Command.link(ref('point_of_sale.group_pos_user')), Command.link(ref('point_of_sale.group_pos_manager'))]"/>
+        <field name="sequence">20</field>
+        <field name="is_published">True</field>
+    </record>
+</odoo>
+

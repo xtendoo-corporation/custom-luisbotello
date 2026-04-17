@@ -1,0 +1,186 @@
+{
+  "version": "18.5.10",
+  "sheets": [
+    {
+      "id": "sheet1",
+      "name": "Dashboard",
+      "colNumber": 7,
+      "rowNumber": 22,
+      "rows": {
+        "0": { "size": 40 },
+        "2": { "size": 32 }
+      },
+      "cols": {
+        "0": { "size": 110 },
+        "1": { "size": 160 },
+        "2": { "size": 130 },
+        "3": { "size": 90 },
+        "4": { "size": 120 },
+        "5": { "size": 120 }
+      },
+      "merges": [],
+      "cells": {
+        "A1": "[Pedidos por tramo horario](odoo://view/{\"viewType\":\"list\",\"action\":{\"domain\":[],\"context\":{},\"modelName\":\"luis.botello.pos.hourly.report\",\"views\":[[false,\"list\"],[false,\"pivot\"],[false,\"graph\"],[false,\"search\"]]},\"threshold\":0,\"name\":\"Pedidos por tramo horario\"})",
+        "A2": "=_t(\"Se actualiza con nuevas ventas al recargar el tablero\")",
+        "A4": "=ODOO.LIST.HEADER(1, \"report_date\", _t(\"Día\"))",
+        "B4": "=ODOO.LIST.HEADER(1, \"config_id\", _t(\"Caja\"))",
+        "C4": "=ODOO.LIST.HEADER(1, \"time_slot\", _t(\"Tramo horario\"))",
+        "D4": "=ODOO.LIST.HEADER(1, \"order_count\", _t(\"Pedidos\"))",
+        "E4": "=ODOO.LIST.HEADER(1, \"amount_total\", _t(\"Importe total\"))",
+        "F4": "=ODOO.LIST.HEADER(1, \"average_ticket\", _t(\"Ticket medio\"))",
+        "A5": "=ODOO.LIST(1,1,\"report_date\")",
+        "B5": "=ODOO.LIST(1,1,\"config_id\")",
+        "C5": "=ODOO.LIST(1,1,\"time_slot\")",
+        "D5": "=ODOO.LIST(1,1,\"order_count\")",
+        "E5": "=ODOO.LIST(1,1,\"amount_total\")",
+        "F5": "=ODOO.LIST(1,1,\"average_ticket\")",
+        "A6": "=ODOO.LIST(1,2,\"report_date\")",
+        "B6": "=ODOO.LIST(1,2,\"config_id\")",
+        "C6": "=ODOO.LIST(1,2,\"time_slot\")",
+        "D6": "=ODOO.LIST(1,2,\"order_count\")",
+        "E6": "=ODOO.LIST(1,2,\"amount_total\")",
+        "F6": "=ODOO.LIST(1,2,\"average_ticket\")",
+        "A7": "=ODOO.LIST(1,3,\"report_date\")",
+        "B7": "=ODOO.LIST(1,3,\"config_id\")",
+        "C7": "=ODOO.LIST(1,3,\"time_slot\")",
+        "D7": "=ODOO.LIST(1,3,\"order_count\")",
+        "E7": "=ODOO.LIST(1,3,\"amount_total\")",
+        "F7": "=ODOO.LIST(1,3,\"average_ticket\")",
+        "A8": "=ODOO.LIST(1,4,\"report_date\")",
+        "B8": "=ODOO.LIST(1,4,\"config_id\")",
+        "C8": "=ODOO.LIST(1,4,\"time_slot\")",
+        "D8": "=ODOO.LIST(1,4,\"order_count\")",
+        "E8": "=ODOO.LIST(1,4,\"amount_total\")",
+        "F8": "=ODOO.LIST(1,4,\"average_ticket\")",
+        "A9": "=ODOO.LIST(1,5,\"report_date\")",
+        "B9": "=ODOO.LIST(1,5,\"config_id\")",
+        "C9": "=ODOO.LIST(1,5,\"time_slot\")",
+        "D9": "=ODOO.LIST(1,5,\"order_count\")",
+        "E9": "=ODOO.LIST(1,5,\"amount_total\")",
+        "F9": "=ODOO.LIST(1,5,\"average_ticket\")",
+        "A10": "=ODOO.LIST(1,6,\"report_date\")",
+        "B10": "=ODOO.LIST(1,6,\"config_id\")",
+        "C10": "=ODOO.LIST(1,6,\"time_slot\")",
+        "D10": "=ODOO.LIST(1,6,\"order_count\")",
+        "E10": "=ODOO.LIST(1,6,\"amount_total\")",
+        "F10": "=ODOO.LIST(1,6,\"average_ticket\")",
+        "A11": "=ODOO.LIST(1,7,\"report_date\")",
+        "B11": "=ODOO.LIST(1,7,\"config_id\")",
+        "C11": "=ODOO.LIST(1,7,\"time_slot\")",
+        "D11": "=ODOO.LIST(1,7,\"order_count\")",
+        "E11": "=ODOO.LIST(1,7,\"amount_total\")",
+        "F11": "=ODOO.LIST(1,7,\"average_ticket\")",
+        "A12": "=ODOO.LIST(1,8,\"report_date\")",
+        "B12": "=ODOO.LIST(1,8,\"config_id\")",
+        "C12": "=ODOO.LIST(1,8,\"time_slot\")",
+        "D12": "=ODOO.LIST(1,8,\"order_count\")",
+        "E12": "=ODOO.LIST(1,8,\"amount_total\")",
+        "F12": "=ODOO.LIST(1,8,\"average_ticket\")",
+        "A13": "=ODOO.LIST(1,9,\"report_date\")",
+        "B13": "=ODOO.LIST(1,9,\"config_id\")",
+        "C13": "=ODOO.LIST(1,9,\"time_slot\")",
+        "D13": "=ODOO.LIST(1,9,\"order_count\")",
+        "E13": "=ODOO.LIST(1,9,\"amount_total\")",
+        "F13": "=ODOO.LIST(1,9,\"average_ticket\")",
+        "A14": "=ODOO.LIST(1,10,\"report_date\")",
+        "B14": "=ODOO.LIST(1,10,\"config_id\")",
+        "C14": "=ODOO.LIST(1,10,\"time_slot\")",
+        "D14": "=ODOO.LIST(1,10,\"order_count\")",
+        "E14": "=ODOO.LIST(1,10,\"amount_total\")",
+        "F14": "=ODOO.LIST(1,10,\"average_ticket\")",
+        "A15": "=ODOO.LIST(1,11,\"report_date\")",
+        "B15": "=ODOO.LIST(1,11,\"config_id\")",
+        "C15": "=ODOO.LIST(1,11,\"time_slot\")",
+        "D15": "=ODOO.LIST(1,11,\"order_count\")",
+        "E15": "=ODOO.LIST(1,11,\"amount_total\")",
+        "F15": "=ODOO.LIST(1,11,\"average_ticket\")",
+        "A16": "=ODOO.LIST(1,12,\"report_date\")",
+        "B16": "=ODOO.LIST(1,12,\"config_id\")",
+        "C16": "=ODOO.LIST(1,12,\"time_slot\")",
+        "D16": "=ODOO.LIST(1,12,\"order_count\")",
+        "E16": "=ODOO.LIST(1,12,\"amount_total\")",
+        "F16": "=ODOO.LIST(1,12,\"average_ticket\")"
+      },
+      "styles": {
+        "A1": 1,
+        "A2": 2,
+        "A4:F4": 3,
+        "A5:F16": 4
+      },
+      "formats": {},
+      "borders": {
+        "A1:F1": 1,
+        "A4:F4": 2,
+        "A5:F16": 3
+      },
+      "conditionalFormats": [],
+      "dataValidationRules": [],
+      "figures": []
+    }
+  ],
+  "styles": {
+    "1": { "bold": true, "fontSize": 16, "textColor": "#017e84" },
+    "2": { "italic": true, "textColor": "#6c757d" },
+    "3": { "bold": true, "fillColor": "#eaf4ff" },
+    "4": {}
+  },
+  "formats": {},
+  "borders": {
+    "1": { "bottom": { "style": "thin", "color": "#CCCCCC" } },
+    "2": { "top": { "style": "thin", "color": "#CCCCCC" }, "bottom": { "style": "thin", "color": "#CCCCCC" } },
+    "3": { "bottom": { "style": "thin", "color": "#E5E7EB" } }
+  },
+  "revisionId": "START_REVISION",
+  "uniqueFigureIds": true,
+  "settings": {
+    "locale": {
+      "name": "English (US)",
+      "code": "en_US",
+      "thousandsSeparator": ",",
+      "decimalSeparator": ".",
+      "dateFormat": "mm/dd/yyyy",
+      "timeFormat": "hh:mm:ss",
+      "formulaArgSeparator": ",",
+      "weekStart": 7
+    }
+  },
+  "pivots": {},
+  "pivotNextId": 1,
+  "customTableStyles": {},
+  "globalFilters": [
+    {
+      "id": "date_filter_hourly",
+      "type": "date",
+      "label": "Periodo",
+      "defaultValue": "last_90_days"
+    },
+    {
+      "id": "config_filter_hourly",
+      "type": "relation",
+      "label": "Caja",
+      "modelName": "pos.config",
+      "defaultValueDisplayNames": []
+    }
+  ],
+  "lists": {
+    "1": {
+      "columns": ["report_date", "config_id", "time_slot", "order_count", "amount_total", "average_ticket"],
+      "domain": [],
+      "model": "luis.botello.pos.hourly.report",
+      "context": {},
+      "orderBy": [
+        { "name": "report_date", "desc": true },
+        { "name": "slot_hour", "desc": false }
+      ],
+      "id": "1",
+      "name": "Pedidos por tramo horario",
+      "fieldMatching": {
+        "date_filter_hourly": { "chain": "report_date", "type": "date", "offset": 0 },
+        "config_filter_hourly": { "chain": "config_id", "type": "many2one" }
+      }
+    }
+  },
+  "listNextId": 2,
+  "chartOdooMenusReferences": {}
+}
+
