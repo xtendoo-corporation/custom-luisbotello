@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="report_factura_simplificada_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_factura_simplificada_80mm">
+        <xpath expr="//span[@t-field='res_company.name']" position="replace">
+            <t t-if="o.pos_order_ids">
+                <span t-field="o.pos_order_ids[0].config_id.name"/>
+            </t>
+            <t t-else="">
+                <span t-field="res_company.name"/>
+            </t>
+        </xpath>
+    </template>
+</odoo>

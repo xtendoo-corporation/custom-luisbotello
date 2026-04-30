@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <t t-name="luis_botello_extend_pos_conventional.ReceiptHeader" t-inherit="pos_conventional_receipt.ReceiptHeader" t-inherit-mode="extension">
+        <xpath expr="//t[@t-if='props.data.company.name']" position="replace">
+            <div style="font-weight: bold; font-size: 13px; text-transform: uppercase;">
+                <t t-esc="props.data.pos.config.name" />
+            </div>
+        </xpath>
+    </t>
+</templates>
