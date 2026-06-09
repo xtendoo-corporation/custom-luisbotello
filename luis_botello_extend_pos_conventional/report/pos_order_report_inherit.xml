@@ -9,5 +9,18 @@
                 <span t-field="res_company.name"/>
             </t>
         </xpath>
+        <xpath expr="//div[hasclass('page')]" position="inside">
+             <div class="text-center" style="font-size: 1em; margin-top: 10px;">
+                No Refunds/ No Reembolso
+            </div>
+        </xpath>
+    </template>
+
+    <template id="report_pos_order_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_pos_order_80mm">
+        <xpath expr="//div[hasclass('page')]" position="inside">
+             <div class="text-center" style="font-size: 1em; margin-top: 10px;">
+                No Refunds/ No Reembolso
+            </div>
+        </xpath>
     </template>
 </odoo>

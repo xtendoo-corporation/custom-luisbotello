@@ -7,4 +7,12 @@
             </div>
         </xpath>
     </t>
+
+    <t t-name="luis_botello_extend_pos_conventional.OrderReceipt" t-inherit="point_of_sale.OrderReceipt" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('pos-receipt')]" position="inside">
+            <div style="text-align: center; font-size: 11px; margin-top: 10px;">
+                No Refunds/ No Reembolso
+            </div>
+        </xpath>
+    </t>
 </templates>
