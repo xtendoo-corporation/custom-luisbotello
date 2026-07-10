@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_pos_category_to_product_form" model="ir.ui.view">
+        <field name="name">pos.category.to.product.form</field>
+        <field name="model">pos.category.to.product</field>
+        <field name="arch" type="xml">
+            <form string="Copiar Categorías de TPV">
+                <group>
+                    <p class="oe_grey">
+                        Este asistente buscará todas las categorías del Punto de Venta y las creará como categorías de productos bajo la categoría padre seleccionada.
+                    </p>
+                    <field name="parent_id" options="{'no_create': True, 'no_open': True}"/>
+                </group>
+                <footer>
+                    <button name="action_copy_categories" string="Copiar Categorías" type="object" class="btn-primary" data-hotkey="q"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel" data-hotkey="x"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_category_to_product" model="ir.actions.act_window">
+        <field name="name">Copiar Categorías a Productos</field>
+        <field name="res_model">pos.category.to.product</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_pos_category_to_product"
+              name="Sincronizar Categorías"
+              parent="point_of_sale.menu_point_config_product"
+              action="action_pos_category_to_product"
+              sequence="100"
+              groups="point_of_sale.group_pos_manager"/>
+</odoo>
+
