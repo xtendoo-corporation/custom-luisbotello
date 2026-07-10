@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="invoice_margin_form_tree_groups" model="ir.ui.view">
+        <field name="name">account.move.margin.view.form.inherit</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account_invoice_margin.invoice_margin_form_tree"/>
+        <field name="arch" type="xml">
+            <!-- Líneas de factura en lista -->
+            <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='purchase_price']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+            <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='margin']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+            <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='margin_percent']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+
+            <!-- Líneas de factura en formulario embebido -->
+            <xpath expr="//field[@name='invoice_line_ids']/form//field[@name='purchase_price']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+            <xpath expr="//field[@name='invoice_line_ids']/form//field[@name='margin']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+            <xpath expr="//field[@name='invoice_line_ids']/form//field[@name='margin_percent']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+
+            <!-- Totales en el formulario de la factura -->
+            <xpath expr="//field[@name='margin']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+            <xpath expr="//field[@name='margin_percent']" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_account_invoice_tree_groups" model="ir.ui.view">
+        <field name="name">account.move.margin.view.tree.inherit</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account_invoice_margin.view_account_invoice_tree"/>
+        <field name="arch" type="xml">
+            <field name="margin_signed" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </field>
+            <field name="margin_percent" position="attributes">
+                <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
+            </field>
+        </field>
+    </record>
+</odoo>
+
