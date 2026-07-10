@@ -16,5 +16,15 @@
             </xpath>
         </field>
     </record>
+    <record id="view_pos_order_tree_groups" model="ir.ui.view">
+        <field name="name">pos.order.tree.inherit</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_order_tree"/>
+        <field name="arch" type="xml">
+            <field name="amount_total" position="after">
+                <field name="margin" widget="monetary" optional="hide" groups="luis_botello_permisions.group_show_margin"/>
+                <field name="margin_percent" widget="percentage" optional="hide" groups="luis_botello_permisions.group_show_margin"/>
+            </field>
+        </field>
+    </record>
 </odoo>
-
