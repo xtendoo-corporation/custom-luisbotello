@@ -52,6 +52,8 @@ class TestLuisBotelloPermissions(TransactionCase):
         # Verificar en pos.order
         view = self.env.ref('luis_botello_permisions.view_pos_pos_form_groups')
         self.assertIn('luis_botello_permisions.group_show_margin', view.arch)
+        # Verificar que el margen monetario está presente en la cabecera
+        self.assertIn('name="margin"', view.arch)
 
         # Verificar en lista de pos.order
         view = self.env.ref('luis_botello_permisions.view_pos_order_tree_groups')

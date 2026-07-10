@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Vista heredada para el formulario de pedidos TPV -->
     <record id="view_pos_pos_form_groups" model="ir.ui.view">
-        <field name="name">pos.order.form.inherit</field>
+        <field name="name">pos.order.form.inherit.luis_botello</field>
         <field name="model">pos.order</field>
-        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+        <!-- Heredamos de la vista que define el diseño actual de Luis Botello -->
+        <field name="inherit_id" ref="pos_conventional_core.view_pos_pos_form_inherit_pos_conventional_core"/>
+        <field name="priority">5000</field>
         <field name="arch" type="xml">
+            <!-- Totales del pedido: insertar después del campo Total -->
+            <xpath expr="//field[@name='amount_total']" position="after">
+                <field name="margin" widget="monetary" string="Margen Total" groups="luis_botello_permisions.group_show_margin"/>
+                <field name="margin_percent" widget="percentage" string="Margen (%)" groups="luis_botello_permisions.group_show_margin"/>
+            </xpath>
+            <!-- Seguridad en las líneas de pedido -->
             <xpath expr="//field[@name='lines']//list//field[@name='total_cost']" position="attributes">
                 <attribute name="groups">luis_botello_permisions.group_show_margin</attribute>
             </xpath>
@@ -16,10 +25,12 @@
             </xpath>
         </field>
     </record>
+    <!-- Vista heredada para el listado de pedidos TPV -->
     <record id="view_pos_order_tree_groups" model="ir.ui.view">
-        <field name="name">pos.order.tree.inherit</field>
+        <field name="name">pos.order.tree.inherit.luis_botello</field>
         <field name="model">pos.order</field>
         <field name="inherit_id" ref="point_of_sale.view_pos_order_tree"/>
+        <field name="priority">5000</field>
         <field name="arch" type="xml">
             <field name="amount_total" position="after">
                 <field name="margin" widget="monetary" optional="hide" groups="luis_botello_permisions.group_show_margin"/>
