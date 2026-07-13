@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <t t-inherit="pos_conventional_session_management.ClosingPopup" t-inherit-mode="extension" owl="1">
+        <xpath expr="//div[hasclass('input-group')]/button" position="before">
+            <button class="btn btn-outline-secondary"
+                    type="button"
+                    t-on-click="openCashCalculator"
+                    title="Realizar recuento de monedas y billetes">
+                <i class="fa fa-calculator me-1"/>
+            </button>
+        </xpath>
+    </t>
+</templates>
+

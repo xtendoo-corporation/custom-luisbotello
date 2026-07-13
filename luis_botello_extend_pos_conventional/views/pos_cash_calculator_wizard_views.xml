@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_pos_cash_calculator_wizard_form_inherit" model="ir.ui.view">
+        <field name="name">pos.cash.calculator.wizard.form.inherit</field>
+        <field name="model">pos.cash.calculator.wizard</field>
+        <field name="inherit_id" ref="pos_conventional_cash_calculator.view_pos_cash_calculator_wizard_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="replace">
+                <form string="Recuento de efectivo">
+                    <div class="row m-0 p-0">
+                        <!-- Money Grid (Left Side) -->
+                        <div class="col-12 col-md-8 p-3">
+                            <h5 class="text-uppercase fw-bold border-bottom pb-2 mb-3">Billetes</h5>
+                            <div class="row g-2 mb-4">
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_200" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_200" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_200" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_200" string="200 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_20" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_20" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_20" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_20" string="20 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_100" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_100" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_100" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_100" string="100 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_10" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_10" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_10" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_10" string="10 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_50" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_50" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_50" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_50" string="50 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_5" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_5" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_5" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_5" string="5 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                            </div>
+
+                            <h5 class="text-uppercase fw-bold border-bottom pb-2 mb-3">Monedas</h5>
+                            <div class="row g-2">
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_2" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_2" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_2" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_2" string="2 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_020" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_020" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_020" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_020" string="0,20 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_1" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_1" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_1" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_1" string="1 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_010" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_010" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_010" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_010" string="0,10 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_050" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_050" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_050" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_050" string="0,50 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_005" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_005" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_005" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_005" string="0,05 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Total Section (Right Side) -->
+                        <div class="col-12 col-md-4 bg-light p-4 d-flex flex-column align-items-center justify-content-center border-start shadow-sm rounded-end">
+                            <h4 class="text-uppercase text-muted fw-bold mb-1">Total</h4>
+                            <div class="display-3 fw-bolder text-primary">
+                                <field name="total" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                            </div>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="parent_model" invisible="1"/>
+                            <field name="parent_res_id" invisible="1"/>
+                        </div>
+                    </div>
+                    <footer class="mt-auto border-top p-3 bg-white">
+                        <button name="action_confirm" string="Confirmar" type="object" class="btn-primary btn-lg px-4"/>
+                        <button name="action_clear" string="Limpiar" type="object" class="btn-secondary btn-lg px-4"/>
+                        <button string="Cancelar" class="btn-secondary btn-lg px-4" special="cancel"/>
+                    </footer>
+                </form>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+
+
+
+
