@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.luis.botello.extend.pos.conventional</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="point_of_sale.res_config_settings_view_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//setting[@id='payment_methods_new']" position="after">
+                <setting id="pos_access_slug_setting" string="Filtro de URL"
+                    help="Identificador para acceder directamente a esta caja mediante una URL personalizada.">
+                    <div class="content-group">
+                        <div class="mt16">
+                            <label string="Slug de acceso" for="pos_access_slug" class="col-lg-3 o_light_label"/>
+                            <field name="pos_access_slug" placeholder="ej. prueba"/>
+                        </div>
+                        <div class="mt8" invisible="not pos_access_url">
+                            <label string="Enlace directo" for="pos_access_url" class="col-lg-3 o_light_label"/>
+                            <field name="pos_access_url" widget="url" readonly="1"/>
+                        </div>
+                    </div>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+

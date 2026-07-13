@@ -23,6 +23,8 @@
     'data': [
         'report/pos_order_report_inherit.xml',
         'views/pos_cash_calculator_wizard_views.xml',
+        'views/pos_config_views.xml',
+        'views/res_config_settings_views.xml',
     ],
     'installable': True,
     'application': False,
