@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="purchase_order_form_inherit_create_bill" model="ir.ui.view">
+        <field name="name">purchase.order.form.inherit.create.bill</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//widget[@name='purchase_file_uploader']" position="after">
+                <button name="action_create_invoice"
+                        string="Crear factura"
+                        type="object"
+                        invisible="state != 'purchase' or invoice_status != 'to invoice' or locked"
+                        data-hotkey="w"
+                        groups="purchase.group_purchase_user"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+
+

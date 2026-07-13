@@ -11,7 +11,8 @@
         "account",
         "account_invoice_margin",
         "product",
-        "pos_conventional_core"
+        "pos_conventional_core",
+        "purchase"
     ],
     "data": [
         "security/security.xml",
@@ -20,9 +21,9 @@
         "views/account_move_views.xml",
         "views/product_views.xml",
         "views/pos_order_views.xml",
+        "views/purchase_order_views.xml",
         "wizard/pos_category_to_product_views.xml",
     ],
     "installable": True,
     "license": "LGPL-3",
 }
-
