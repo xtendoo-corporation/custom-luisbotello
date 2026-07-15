@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_move_form_inherit_automation" model="ir.ui.view">
+        <field name="name">stock.move.form.inherit.automation</field>
+        <field name="model">stock.move</field>
+        <field name="inherit_id" ref="stock.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='main_grp']" position="inside">
+                <group string="Automatización" invisible="picking_code != 'internal'">
+                    <field name="next_picking_type_id" options="{'no_create': True}"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_stock_move_operations_inherit_automation" model="ir.ui.view">
+        <field name="name">stock.move.operations.inherit.automation</field>
+        <field name="model">stock.move</field>
+        <field name="inherit_id" ref="stock.view_stock_move_operations"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='product_qty']/group[last()]" position="inside">
+                <field name="next_picking_type_id" options="{'no_create': True}" invisible="picking_code != 'internal'"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_picking_form_inherit_automation" model="ir.ui.view">
+        <field name="name">stock.picking.form.inherit.automation</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <field name="parent_picking_id" invisible="1"/>
+                <button name="action_view_parent_picking" type="object" class="oe_stat_button" icon="fa-arrow-left" invisible="not parent_picking_id">
+                    <div class="o_stat_info">
+                        <span class="o_stat_text">Origen Auto</span>
+                    </div>
+                </button>
+                <field name="child_picking_count" invisible="1"/>
+                <button name="action_view_child_pickings" type="object" class="oe_stat_button" icon="fa-chain" invisible="child_picking_count == 0">
+                    <field name="child_picking_count" widget="statinfo" string="Sig. Traslados"/>
+                </button>
+            </xpath>
+            <xpath expr="//field[@name='picking_type_id']" position="after">
+                <field name="next_picking_type_id" options="{'no_create': True}" invisible="picking_type_code != 'internal'"/>
+            </xpath>
+            <xpath expr="//page[@name='extra']" position="inside">
+                <group string="Automatización" invisible="picking_type_code != 'internal'">
+                    <p class="text-muted">Nota: Si se define el tipo de operación aquí, se aplicará a todos los movimientos. También se puede definir individualmente en el detalle de cada producto.</p>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>
