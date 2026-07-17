@@ -83,7 +83,6 @@ class StockPicking(models.Model):
                     'location_id': picking_type.default_location_src_id.id or picking.location_dest_id.id,
                     'location_dest_id': picking_type.default_location_dest_id.id or picking.location_dest_id.id,
                     'origin': picking.name,
-                    'next_picking_type_id': pt_id,
                     'parent_picking_id': picking.id,
                 })
 
