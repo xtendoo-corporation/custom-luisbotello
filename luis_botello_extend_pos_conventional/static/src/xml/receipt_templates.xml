@@ -15,4 +15,12 @@
             </div>
         </xpath>
     </t>
+
+    <t t-name="luis_botello_extend_pos_conventional.Orderline" t-inherit="point_of_sale.Orderline" t-inherit-mode="extension">
+        <xpath expr="//li[@t-if='vals.discount']" position="replace">
+            <li t-if="vals.discount" class="price-per-unit">
+                <i class="fa fa-tag pe-1"/><em><t t-esc="vals.discount" />% </em> (<t t-esc="vals.discountAmount" />) descuento sobre <t t-esc="vals.noDiscountPrice"/>
+            </li>
+        </xpath>
+    </t>
 </templates>

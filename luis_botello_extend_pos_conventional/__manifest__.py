@@ -14,6 +14,7 @@
     'assets': {
         'point_of_sale._assets_pos': [
             'luis_botello_extend_pos_conventional/static/src/xml/receipt_templates.xml',
+            'luis_botello_extend_pos_conventional/static/src/js/orderline_patch.js',
         ],
         'web.assets_backend': [
             'luis_botello_extend_pos_conventional/static/src/js/closing_popup_patch.js',

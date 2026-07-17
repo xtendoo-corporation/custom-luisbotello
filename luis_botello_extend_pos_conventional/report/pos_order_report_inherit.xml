@@ -1,6 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <template id="report_factura_simplificada_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_factura_simplificada_80mm">
+        <xpath expr="//style" position="inside">
+            .col-desc { width: 15%; text-align: center; }
+            .col-name { width: 53% !important; }
+        </xpath>
+
+        <xpath expr="//thead//th[hasclass('col-name')]" position="after">
+            <th class="text-center col-desc">DTO</th>
+        </xpath>
+
+        <xpath expr="//td[hasclass('col-name')]" position="attributes">
+            <attribute name="style">white-space: normal; padding-right: 2px;</attribute>
+        </xpath>
+
+        <xpath expr="//td[hasclass('col-name')]" position="after">
+            <td class="text-center col-desc">
+                <t t-if="line.discount &gt; 0">
+                    <span t-esc="'%.2f' % line.discount"/>%
+                </t>
+                <t t-if="not line.discount and line.move_id.pos_order_ids and line.product_id">
+                    <t t-set="pos_line" t-value="line.move_id.pos_order_ids[0].lines.filtered(lambda l: l.product_id == line.product_id and abs(l.qty) == abs(line.quantity))[:1]"/>
+                    <t t-if="pos_line and pos_line.discount_line &gt; 0">
+                        <span t-esc="'%.2f' % pos_line.discount_line"/>
+                    </t>
+                </t>
+            </td>
+        </xpath>
+
         <xpath expr="//span[@t-field='res_company.name']" position="replace">
             <t t-if="o.pos_order_ids">
                 <span t-field="o.pos_order_ids[0].config_id.name"/>
@@ -9,14 +36,29 @@
                 <span t-field="res_company.name"/>
             </t>
         </xpath>
-        <xpath expr="//div[hasclass('page')]" position="inside">
-             <div class="text-center" style="font-size: 1em; margin-top: 10px;">
-                No Refunds/ No Reembolso
-            </div>
-        </xpath>
     </template>
 
     <template id="report_pos_order_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_pos_order_80mm">
+        <xpath expr="//style" position="inside">
+            .col-desc { width: 15%; text-align: center; }
+            .col-name { width: 53% !important; }
+        </xpath>
+        <xpath expr="//thead//th[hasclass('col-name')]" position="after">
+            <th class="text-center col-desc">DTO</th>
+        </xpath>
+        <xpath expr="//td[hasclass('col-name')]" position="attributes">
+            <attribute name="style">white-space: normal;</attribute>
+        </xpath>
+        <xpath expr="//td[hasclass('col-name')]" position="after">
+            <td class="text-center col-desc">
+                <t t-if="line.discount &gt; 0">
+                    <span t-esc="'%.2f' % line.discount"/>%
+                </t>
+                <t t-if="line.discount_line &gt; 0">
+                    <span t-esc="'%.2f' % line.discount_line"/>
+                </t>
+            </td>
+        </xpath>
         <xpath expr="//div[hasclass('page')]" position="inside">
              <div class="text-center" style="font-size: 1em; margin-top: 10px;">
                 No Refunds/ No Reembolso
