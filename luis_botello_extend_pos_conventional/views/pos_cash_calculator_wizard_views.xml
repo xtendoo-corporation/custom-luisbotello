@@ -112,6 +112,22 @@
                                     </div>
                                     <label for="qty_005" string="0,05 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
                                 </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_002" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_002" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_002" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_002" string="0,02 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
+                                <div class="col-6 d-flex align-items-center mb-1 px-3">
+                                    <div class="input-group" style="width: auto;">
+                                        <button name="decrement_001" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-minus small"/></button>
+                                        <field name="qty_001" nolabel="1" class="form-control text-center px-1" style="max-width: 50px; font-size: 1.1rem;"/>
+                                        <button name="increment_001" type="object" class="btn btn-outline-secondary px-2 py-1"><i class="fa fa-plus small"/></button>
+                                    </div>
+                                    <label for="qty_001" string="0,01 €" class="m-0 fw-bold ms-2 whitespace-nowrap"/>
+                                </div>
                             </div>
                         </div>
 
@@ -136,6 +152,8 @@
         </field>
     </record>
 </odoo>
+
+
 
 
 

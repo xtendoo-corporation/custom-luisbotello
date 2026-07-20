@@ -28,6 +28,8 @@ class PosCashCalculatorWizard(models.TransientModel):
                     "qty_020": self.qty_020,
                     "qty_010": self.qty_010,
                     "qty_005": self.qty_005,
+                    "qty_002": self.qty_002,
+                    "qty_001": self.qty_001,
                 })
                 return {"type": "ir.actions.act_window_close"}
         return super().action_confirm()
@@ -37,6 +39,7 @@ class PosCashCalculatorWizard(models.TransientModel):
         self.write({
             "qty_200": 0, "qty_100": 0, "qty_50": 0, "qty_20": 0, "qty_10": 0, "qty_5": 0,
             "qty_2": 0, "qty_1": 0, "qty_050": 0, "qty_020": 0, "qty_010": 0, "qty_005": 0,
+            "qty_002": 0, "qty_001": 0,
         })
         if self.parent_model == "pos.session":
             parent = self._get_parent_wizard()
@@ -44,6 +47,6 @@ class PosCashCalculatorWizard(models.TransientModel):
                 parent.write({
                     "qty_200": 0, "qty_100": 0, "qty_50": 0, "qty_20": 0, "qty_10": 0, "qty_5": 0,
                     "qty_2": 0, "qty_1": 0, "qty_050": 0, "qty_020": 0, "qty_010": 0, "qty_005": 0,
+                    "qty_002": 0, "qty_001": 0,
                 })
         return self._reload_view()
-

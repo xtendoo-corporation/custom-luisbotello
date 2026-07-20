@@ -9,7 +9,8 @@ patch(ClosingPopup.prototype, {
         const sessionId = this.props.sessionId;
         const sessionData = await this.orm.read("pos.session", [sessionId], [
             "qty_200", "qty_100", "qty_50", "qty_20", "qty_10", "qty_5",
-            "qty_2", "qty_1", "qty_050", "qty_020", "qty_010", "qty_005"
+            "qty_2", "qty_1", "qty_050", "qty_020", "qty_010", "qty_005",
+            "qty_002", "qty_001"
         ]);
         const s = sessionData[0];
 
@@ -35,6 +36,8 @@ patch(ClosingPopup.prototype, {
                 default_qty_020: s.qty_020,
                 default_qty_010: s.qty_010,
                 default_qty_005: s.qty_005,
+                default_qty_002: s.qty_002,
+                default_qty_001: s.qty_001,
             }
         }, {
             onClose: async () => {

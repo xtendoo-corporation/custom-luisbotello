@@ -16,4 +16,5 @@ class PosSession(models.Model):
     qty_020 = fields.Integer(string="Cantidad 0,20€", default=0)
     qty_010 = fields.Integer(string="Cantidad 0,10€", default=0)
     qty_005 = fields.Integer(string="Cantidad 0,05€", default=0)
-
+    qty_002 = fields.Integer(string="Cantidad 0,02€", default=0)
+    qty_001 = fields.Integer(string="Cantidad 0,01€", default=0)
