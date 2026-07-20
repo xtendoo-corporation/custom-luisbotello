@@ -19,12 +19,10 @@
         'web.assets_backend': [
             'luis_botello_extend_pos_conventional/static/src/js/closing_popup_patch.js',
             'luis_botello_extend_pos_conventional/static/src/xml/closing_popup_patch.xml',
-            'luis_botello_extend_pos_conventional/static/src/scss/pos_cash_calculator_wizard.scss',
         ],
     },
     'data': [
         'report/pos_order_report_inherit.xml',
-        'views/pos_cash_calculator_wizard_views.xml',
         'views/pos_config_views.xml',
         'views/res_config_settings_views.xml',
     ],
