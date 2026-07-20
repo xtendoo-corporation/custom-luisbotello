@@ -4,10 +4,33 @@ from odoo import api, fields, models
 class PosCashCalculatorWizard(models.TransientModel):
     _inherit = "pos.cash.calculator.wizard"
 
+    qty_001 = fields.Integer(string="Cantidad 0,01€", default=0)
+
     parent_model = fields.Selection(
         selection_add=[("pos.session", "Sesión POS")],
         ondelete={"pos.session": "cascade"},
     )
+
+    @api.depends(
+        "qty_200", "qty_100", "qty_50", "qty_20", "qty_10", "qty_5",
+        "qty_2", "qty_1", "qty_050", "qty_025", "qty_020", "qty_010",
+        "qty_005", "qty_002", "qty_001",
+    )
+    def _compute_total(self):
+        super()._compute_total()
+        for wizard in self:
+            wizard.total += wizard.qty_001 * 0.01
+
+    def increment_001(self):
+        self.ensure_one()
+        self.qty_001 += 1
+        return self._reload_view()
+
+    def decrement_001(self):
+        self.ensure_one()
+        if self.qty_001 > 0:
+            self.qty_001 -= 1
+        return self._reload_view()
 
     def action_confirm(self):
         self.ensure_one()
