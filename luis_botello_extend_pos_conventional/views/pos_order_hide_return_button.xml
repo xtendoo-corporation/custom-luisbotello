@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Oculta el botón de devolución (name='refund') en el header cuando la caja tenga hide_return_button -->
+    <record id="view_pos_order_form_hide_return_button" model="ir.ui.view">
+        <field name="name">pos.order.form.inherit.hide.return.button</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+        <field name="arch" type="xml">
+            <!-- Se selecciona por atributo name (refund) que es estable en la vista original -->
+            <xpath expr="//header/button[@name='refund']" position="attributes">
+                <!-- Usamos el campo relacionado pos_config_hide_return para controlar la invisibilidad -->
+                <attribute name="invisible">pos_config_hide_return</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>
+

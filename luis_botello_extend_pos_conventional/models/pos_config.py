@@ -15,6 +15,12 @@ class PosConfig(models.Model):
         help="Utilice esta URL para acceder directamente a esta caja filtrada.",
     )
 
+    hide_return_button = fields.Boolean(
+        string="Ocultar botón Devolución en pedidos",
+        default=False,
+        help="Si está marcado, se ocultará el botón de devolución en los pedidos de venta en esta caja.",
+    )
+
     def _compute_access_url(self):
         base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
         for config in self:

@@ -14,3 +14,9 @@ class ResConfigSettings(models.TransientModel):
         readonly=True,
         string="Enlace de acceso",
     )
+
+    pos_hide_return_button = fields.Boolean(
+        related='pos_config_id.hide_return_button',
+        readonly=False,
+        string='Ocultar botón Devolución en pedidos',
+    )

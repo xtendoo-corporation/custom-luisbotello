@@ -10,8 +10,10 @@
                     <field name="access_slug" placeholder="Identificador (ej. prueba)"/>
                     <field name="access_url" widget="url" invisible="not access_url"/>
                 </group>
+                <group string="Comportamiento POS">
+                    <field name="hide_return_button"/>
+                </group>
             </xpath>
         </field>
     </record>
 </odoo>
-

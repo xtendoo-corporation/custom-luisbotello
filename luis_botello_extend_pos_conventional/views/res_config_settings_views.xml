@@ -19,8 +19,16 @@
                         </div>
                     </div>
                 </setting>
-            </xpath>
-        </field>
-    </record>
-</odoo>
-
+                <setting id="pos_hide_return_button_setting" string="Comportamiento POS"
+                    help="Opciones de comportamiento por caja">
+                    <div class="content-group">
+                        <div class="mt16">
+                            <label string="Ocultar botón Devolución" for="pos_hide_return_button" class="col-lg-3 o_light_label"/>
+                            <field name="pos_hide_return_button"/>
+                        </div>
+                    </div>
+                </setting>
+             </xpath>
+         </field>
+     </record>
+ </odoo>
