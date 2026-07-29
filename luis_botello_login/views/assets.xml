@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <!-- Assets moved to __manifest__ (key 'assets').
+       Left empty to avoid inheriting web.assets_backend which may not exist
+       during module initialization. -->
+</odoo>
+

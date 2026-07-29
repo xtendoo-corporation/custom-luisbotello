@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="action_attendance_wizard" model="ir.actions.act_window">
+    <field name="name">Entrada de asistencia</field>
+    <field name="res_model">luis.attendance.wizard</field>
+    <field name="view_mode">form</field>
+    <field name="view_id" ref="view_luis_attendance_wizard_form"/>
+    <field name="target">new</field>
+  </record>
+</odoo>
+

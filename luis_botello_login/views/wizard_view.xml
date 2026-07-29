@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="view_luis_attendance_wizard_form" model="ir.ui.view">
+    <field name="name">luis.attendance.wizard.form</field>
+    <field name="model">luis.attendance.wizard</field>
+    <field name="arch" type="xml">
+      <form string="Entrada de asistencia">
+        <group>
+          <field name="employee_id" readonly="1"/>
+          <field name="ts" readonly="1"/>
+          <field name="message" readonly="1"/>
+        </group>
+        <footer>
+          <button string="Confirmar" type="object" name="action_confirm" class="btn-primary"/>
+        </footer>
+      </form>
+    </field>
+  </record>
+</odoo>
+

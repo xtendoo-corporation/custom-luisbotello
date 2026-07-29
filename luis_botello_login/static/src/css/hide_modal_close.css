@@ -1,0 +1,15 @@
+/* Hide the close (X) button visually for modals that have the marker class */
+.o_modal_no_close .modal-header .close,
+.o_modal_no_close .modal-header .o_close,
+.o_modal_no_close button[aria-label="Close"],
+.o_modal_no_close button.btn-close,
+.o_modal_no_close .o_form_close {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Ensure the modal header keeps proper padding when the button is hidden */
+.o_modal_no_close .modal-header {
+  padding-right: 1rem;
+}
+
