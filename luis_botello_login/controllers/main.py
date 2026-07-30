@@ -16,14 +16,19 @@ class LuisAttendanceController(http.Controller):
         confirme y se cree/cierre la asistencia.
         """
         _logger = logging.getLogger(__name__)
+        employee = None
         try:
             user = request.env.user
             employee = getattr(user, 'employee_id', False) or request.env['hr.employee'].sudo().search([('user_id', '=', user.id)], limit=1)
-            show = True
-            if employee:
-                # buscar asistencia abierta
-                open_att = request.env['hr.attendance'].sudo().search([('employee_id', '=', employee.id), ('check_out', '=', False)], limit=1)
-                show = not bool(open_att)
+            # Respect the user's preference: if they don't require attendance, don't show
+            if getattr(user, 'require_attendance', True) is False:
+                show = False
+            else:
+                show = True
+                if employee:
+                    # buscar asistencia abierta
+                    open_att = request.env['hr.attendance'].sudo().search([('employee_id', '=', employee.id), ('check_out', '=', False)], limit=1)
+                    show = not bool(open_att)
         except Exception:
             show = False
         _logger.info('luis_botello_login.check_show called, show=%s, uid=%s', show, request.session.uid)
@@ -39,13 +44,18 @@ class LuisAttendanceController(http.Controller):
         import json
         _logger = logging.getLogger(__name__)
         action = None
+        employee = None
         try:
             user = request.env.user
             employee = getattr(user, 'employee_id', False) or request.env['hr.employee'].sudo().search([('user_id', '=', user.id)], limit=1)
-            show = True
-            if employee:
-                open_att = request.env['hr.attendance'].sudo().search([('employee_id', '=', employee.id), ('check_out', '=', False)], limit=1)
-                show = not bool(open_att)
+            # Respect the user's preference: if they don't require attendance, don't show
+            if getattr(user, 'require_attendance', True) is False:
+                show = False
+            else:
+                show = True
+                if employee:
+                    open_att = request.env['hr.attendance'].sudo().search([('employee_id', '=', employee.id), ('check_out', '=', False)], limit=1)
+                    show = not bool(open_att)
         except Exception:
             show = False
 

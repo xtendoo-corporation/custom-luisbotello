@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <!-- Añade la preferencia 'Requiere entrada de asistencia' en la pestaña Preferencias del usuario -->
+    <record id="view_users_form_inherit_require_attendance" model="ir.ui.view">
+      <field name="name">res.users.form.inherit.require.attendance</field>
+      <field name="model">res.users</field>
+      <field name="inherit_id" ref="base.view_users_form"/>
+      <field name="arch" type="xml">
+        <xpath expr="//group[@name='other_preferences']" position="inside">
+          <group>
+            <field name="require_attendance"/>
+          </group>
+        </xpath>
+      </field>
+    </record>
+  </data>
+</odoo>
+

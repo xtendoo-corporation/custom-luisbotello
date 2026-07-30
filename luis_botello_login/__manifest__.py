@@ -8,6 +8,7 @@
     'depends': ['web', 'hr_attendance'],
     'data': [
         'views/wizard_view.xml',
+        'views/res_users_views.xml',
         'data/actions.xml',
         'security/ir.model.access.csv',
     ],
