@@ -6,11 +6,26 @@ import logging
 class LuisAttendanceController(http.Controller):
     @http.route('/luis_botello_login/check_show', type='jsonrpc', auth='user', methods=['POST'])
     def check_show(self):
-        """Devuelve si hay que mostrar el wizard y lo elimina de la sesión para
-        que solo se muestre una vez.
+        """Devuelve si hay que mostrar el wizard.
+
+        Cambiado: ahora la decisión se basa en si el usuario tiene una asistencia
+        abierta (check_out = False). Si NO tiene asistencia abierta, devolverá
+        {'show': True} para que el frontend pueda abrir el wizard. No modificamos
+        la sesión aquí: la comprobación se realiza cada vez que el frontend la
+        solicita, de forma que el wizard seguirá apareciendo hasta que el usuario
+        confirme y se cree/cierre la asistencia.
         """
-        show = bool(request.session.pop('luis_show_attendance', False))
         _logger = logging.getLogger(__name__)
+        try:
+            user = request.env.user
+            employee = getattr(user, 'employee_id', False) or request.env['hr.employee'].sudo().search([('user_id', '=', user.id)], limit=1)
+            show = True
+            if employee:
+                # buscar asistencia abierta
+                open_att = request.env['hr.attendance'].sudo().search([('employee_id', '=', employee.id), ('check_out', '=', False)], limit=1)
+                show = not bool(open_att)
+        except Exception:
+            show = False
         _logger.info('luis_botello_login.check_show called, show=%s, uid=%s', show, request.session.uid)
         return {'show': show}
 
@@ -19,27 +34,28 @@ class LuisAttendanceController(http.Controller):
         """Versión HTTP simple para ser consultada con fetch/jQuery sin depender de web.rpc.
         Devuelve JSON con {'show': True/False} y borra la marca de sesión.
         """
-        show = bool(request.session.pop('luis_show_attendance', False))
+        # Versión simple: decidir si mostrar el wizard en función de la existencia
+        # de una asistencia abierta para el usuario actual.
         import json
-        import logging
         _logger = logging.getLogger(__name__)
-        _logger.info('luis_botello_login.check_show_simple called, show=%s, uid=%s', show, request.session.uid)
         action = None
-        if show:
-            # Try to resolve the employee related to the current user
-            employee = None
-            try:
-                user = request.env.user
-                employee = getattr(user, 'employee_id', False) or request.env['hr.employee'].search([('user_id', '=', user.id)], limit=1)
-            except Exception:
-                employee = None
+        try:
+            user = request.env.user
+            employee = getattr(user, 'employee_id', False) or request.env['hr.employee'].sudo().search([('user_id', '=', user.id)], limit=1)
+            show = True
+            if employee:
+                open_att = request.env['hr.attendance'].sudo().search([('employee_id', '=', employee.id), ('check_out', '=', False)], limit=1)
+                show = not bool(open_att)
+        except Exception:
+            show = False
 
+        _logger.info('luis_botello_login.check_show_simple called, show=%s, uid=%s', show, request.session.uid)
+
+        if show:
             # prepare context to inject default employee
             ctx = {}
             if employee:
                 ctx['default_employee_id'] = employee.id
-
-            # Create a transient wizard record prefilled and return an action opening that record.
             try:
                 Wizard = request.env['luis.attendance.wizard'].sudo()
                 wiz_vals = {}
@@ -58,7 +74,6 @@ class LuisAttendanceController(http.Controller):
                     'context': ctx,
                 }
             except Exception:
-                # fallback: return minimal action dict
                 action = {
                     'type': 'ir.actions.act_window',
                     'res_model': 'luis.attendance.wizard',

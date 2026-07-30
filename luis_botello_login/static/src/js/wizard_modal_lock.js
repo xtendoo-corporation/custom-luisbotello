@@ -8,14 +8,41 @@ odoo.define('luis_botello_login.wizard_modal_lock', [], function (require) {
 
     function markModalNoClose(dialog) {
         try {
-            var titleEl = dialog.querySelector('.modal-title, .o_modal_title, .o_dialog_title')
-                || dialog.querySelector('h4') || dialog.querySelector('h3');
-            var title = titleEl && titleEl.textContent && titleEl.textContent.trim();
-            if (!title) { return; }
-            if (title.indexOf('Registro de asistencia') === -1 && title.indexOf('Entrada de asistencia') === -1) {
-                return;
+            // Primer intento: detectamos si el propio contenido del modal incluye
+            // un marcador (añadido en la vista XML) que identifica este wizard.
+            // Es la forma más fiable y evita depender del título.
+            try {
+                if (dialog.querySelector('.o_modal_no_close_marker')) {
+                    dialog.classList.add('o_modal_no_close');
+                    return;
+                }
+            } catch (e) {
+                // continue to backend check if marker is not present or fails
             }
-            dialog.classList.add('o_modal_no_close');
+
+            // Fallback: consultamos al backend si debemos mostrar/forzar el wizard.
+            try {
+                fetch('/luis_botello_login/check_show', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                }).then(function (resp) {
+                    return resp.ok ? resp.json() : null;
+                }).then(function (result) {
+                    if (!result) { return; }
+                    if (result.show) {
+                        // Si el backend indica que debe mostrarse, ocultamos la X
+                        dialog.classList.add('o_modal_no_close');
+                    }
+                }).catch(function (e) {
+                    // En caso de error, no hacemos nada
+                    console.warn('wizard_modal_no_close: check_show failed', e);
+                });
+            } catch (e) {
+                console.warn('wizard_modal_no_close: fetch failed', e);
+            }
+
         } catch (err) {
             // Do not break the UI if something goes wrong
             console.error('wizard_modal_no_close', err);
