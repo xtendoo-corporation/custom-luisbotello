@@ -2,12 +2,13 @@
 <odoo>
     <template id="report_factura_simplificada_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_factura_simplificada_80mm">
         <xpath expr="//style" position="inside">
-            .col-desc { width: 15%; text-align: center; }
-            .col-name { width: 53% !important; }
+            /* Aumentar ancho de columna PRECIO para mejor legibilidad */
+            .col-desc { width: 20%; text-align: center; }
+            .col-name { width: 50% !important; }
         </xpath>
 
         <xpath expr="//thead//th[hasclass('col-name')]" position="after">
-            <th class="text-center col-desc">DTO</th>
+            <th class="text-center col-desc">PRECIO</th>
         </xpath>
 
         <xpath expr="//td[hasclass('col-name')]" position="attributes">
@@ -16,14 +17,20 @@
 
         <xpath expr="//td[hasclass('col-name')]" position="after">
             <td class="text-center col-desc">
-                <t t-if="line.discount &gt; 0">
-                    <span t-esc="'%.2f' % line.discount"/>%
+                <!-- Mostrar precio unitario sin descuento -->
+                <t t-set="_price_no_disc" t-value="None"/>
+                <!-- Evitar llamadas a builtins que no están en el contexto QWeb. Usar acceso directo a atributos. -->
+                <t t-if="line.price_unit">
+                    <t t-set="_price_no_disc" t-value="line.price_unit"/>
                 </t>
-                <t t-if="not line.discount and line.move_id.pos_order_ids and line.product_id">
+                <t t-if="not _price_no_disc and line.move_id.pos_order_ids and line.product_id">
                     <t t-set="pos_line" t-value="line.move_id.pos_order_ids[0].lines.filtered(lambda l: l.product_id == line.product_id and abs(l.qty) == abs(line.quantity))[:1]"/>
-                    <t t-if="pos_line and pos_line.discount_line &gt; 0">
-                        <span t-esc="'%.2f' % pos_line.discount_line"/>
+                    <t t-if="pos_line and (pos_line.price_unit or pos_line.displayPriceNoDiscount)">
+                        <t t-set="_price_no_disc" t-value="pos_line.price_unit or pos_line.displayPriceNoDiscount"/>
                     </t>
+                </t>
+                <t t-if="_price_no_disc">
+                    <span t-esc="'%.2f €' % _price_no_disc"/>
                 </t>
             </td>
         </xpath>
@@ -53,34 +60,48 @@
                 </t>
             </t>
         </xpath>
+        <!-- Aviso final: no devoluciones (insertado antes del texto de despedida) -->
+        <!-- Mover el aviso al final: insertarlo DESPUÉS del bloque de despedida para que aparezca al final del recibo -->
+        <xpath expr="//div[contains(normalize-space(.),'Gracias por su visita')]" position="after">
+            <div class="text-center" style="font-size:0.95em; margin-top:6px;">
+                No se admiten devoluciones / Non returnable items
+            </div>
+        </xpath>
     </template>
+
 
     <template id="report_pos_order_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_pos_order_80mm">
         <xpath expr="//style" position="inside">
-            .col-desc { width: 15%; text-align: center; }
-            .col-name { width: 53% !important; }
+            /* Aumentar ancho de columna PRECIO para mejor legibilidad */
+            .col-desc { width: 20%; text-align: center; }
+            .col-name { width: 50% !important; }
         </xpath>
         <xpath expr="//thead//th[hasclass('col-name')]" position="after">
-            <th class="text-center col-desc">DTO</th>
+            <th class="text-center col-desc">PRECIO</th>
         </xpath>
         <xpath expr="//td[hasclass('col-name')]" position="attributes">
             <attribute name="style">white-space: normal;</attribute>
         </xpath>
         <xpath expr="//td[hasclass('col-name')]" position="after">
             <td class="text-center col-desc">
-                <t t-if="line.discount &gt; 0">
-                    <span t-esc="'%.2f' % line.discount"/>%
+                <!-- Mostrar precio unitario sin descuento para líneas POS -->
+                <t t-set="_price_no_disc" t-value="None"/>
+                <t t-if="line.price_unit">
+                    <t t-set="_price_no_disc" t-value="line.price_unit"/>
                 </t>
-                <t t-if="line.discount_line &gt; 0">
-                    <span t-esc="'%.2f' % line.discount_line"/>
+                <t t-if="not _price_no_disc and line.displayPriceNoDiscount">
+                    <t t-set="_price_no_disc" t-value="line.displayPriceNoDiscount"/>
+                </t>
+                <t t-if="_price_no_disc">
+                    <span t-esc="'%.2f €' % _price_no_disc"/>
                 </t>
             </td>
         </xpath>
-        <xpath expr="//div[hasclass('page')]" position="inside">
-             <div class="text-center" style="font-size: 1em; margin-top: 10px;">
-                No Refunds/ No Reembolso
-            </div>
-        </xpath>
+         <xpath expr="//div[hasclass('page')]" position="inside">
+              <div class="text-center" style="font-size: 1em; margin-top: 10px;">
+                 No se admiten devoluciones / Non returnable items
+             </div>
+         </xpath>
         <!-- Insertar la información de efectivo justo ANTES del TOTAL en el template pos_order_80mm -->
         <!-- Seleccionamos el div que contiene el span con t-field o.amount_total para evitar coincidir con cabeceras -->
         <xpath expr="//div[span[@t-field='o.amount_total']]" position="before">
@@ -101,5 +122,11 @@
                 </t>
             </t>
         </xpath>
+         <!-- Aviso final: no devoluciones (insertado DESPUÉS del texto de despedida para quedar al final) -->
+         <xpath expr="//div[contains(normalize-space(.),'Gracias por su visita')]" position="after">
+             <div class="text-center" style="font-size:0.95em; margin-top:6px;">
+                 No se admiten devoluciones / Non returnable items
+             </div>
+         </xpath>
     </template>
 </odoo>
