@@ -36,6 +36,23 @@
                 <span t-field="res_company.name"/>
             </t>
         </xpath>
+        <!-- Insertar información de efectivo (Dinero entregado / Cambio devuelto) justo ANTES del bloque TOTAL
+             NOTA: evitar coincidir con el encabezado de tabla 'TOTAL' (th). Seleccionamos el div que contiene
+             la etiqueta que muestra el total principal: <span t-field="o.amount_total"/> -->
+        <xpath expr="//div[span[@t-field='o.amount_total']]" position="before">
+            <t t-if="o.pos_order_ids">
+                <t t-set="_pos" t-value="o.pos_order_ids[0]"/>
+                <t t-set="_cash_payments" t-value="[_p for _p in _pos.payment_ids if (_p.payment_method_id and (_p.payment_method_id.is_cash_count or 'efectiv' in (_p.payment_method_id.name or '').lower() or 'cash' in (_p.payment_method_id.name or '').lower()))]"/>
+                <t t-if="_cash_payments and len(_cash_payments) &gt; 0">
+                    <t t-set="_cash_sum" t-value="sum([p.amount for p in _cash_payments if p.amount &gt;= 0])"/>
+                    <t t-set="_change" t-value="(_cash_sum - (o.amount_total or 0.0))"/>
+                    <div class="text-right" style="margin-top:4px; font-size:0.95em;">
+                        <div>Total entregado: <span t-esc="'%.2f €' % _cash_sum"/></div>
+                        <div>Cambio: <span t-esc="'%.2f €' % (_change if _change &gt;= 0 else 0.0)"/></div>
+                    </div>
+                </t>
+            </t>
+        </xpath>
     </template>
 
     <template id="report_pos_order_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_pos_order_80mm">
@@ -63,6 +80,26 @@
              <div class="text-center" style="font-size: 1em; margin-top: 10px;">
                 No Refunds/ No Reembolso
             </div>
+        </xpath>
+        <!-- Insertar la información de efectivo justo ANTES del TOTAL en el template pos_order_80mm -->
+        <!-- Seleccionamos el div que contiene el span con t-field o.amount_total para evitar coincidir con cabeceras -->
+        <xpath expr="//div[span[@t-field='o.amount_total']]" position="before">
+            <t t-if="o.payment_ids or o.pos_order_ids">
+                <t t-set="_pos" t-value="(o.pos_order_ids and len(o.pos_order_ids) &gt; 0) and o.pos_order_ids[0] or None"/>
+                <t t-set="_cash_payments" t-value="[]"/>
+                <t t-if="_pos">
+                    <t t-set="_cash_payments" t-value="[_p for _p in _pos.payment_ids if (_p.payment_method_id and (_p.payment_method_id.is_cash_count or 'efectiv' in (_p.payment_method_id.name or '').lower() or 'cash' in (_p.payment_method_id.name or '').lower()))]"/>
+                </t>
+                <t t-if="(_cash_payments and len(_cash_payments) &gt; 0) or (not _pos and o.payment_ids)">
+                    <t t-set="_cash_sum" t-value="( _cash_payments and len(_cash_payments) &gt; 0 ) and sum([p.amount for p in _cash_payments if p.amount &gt;= 0]) or sum([p.amount for p in o.payment_ids if p.amount &gt;= 0])"/>
+                    <t t-set="_base_total" t-value="(_pos and (_pos.amount_total or 0.0)) or (o.amount_total or 0.0)"/>
+                    <t t-set="_change" t-value="(_cash_sum - _base_total)"/>
+                    <div class="text-right" style="margin-top:4px; font-size:0.95em;">
+                        <div>Total entregado: <span t-esc="'%.2f €' % _cash_sum"/></div>
+                        <div>Cambio: <span t-esc="'%.2f €' % (_change if _change &gt;= 0 else 0.0)"/></div>
+                    </div>
+                </t>
+            </t>
         </xpath>
     </template>
 </odoo>

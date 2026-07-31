@@ -8,11 +8,49 @@
         </xpath>
     </t>
 
-    <t t-name="luis_botello_extend_pos_conventional.OrderReceipt" t-inherit="point_of_sale.OrderReceipt" t-inherit-mode="extension">
+    <t t-name="luis_botello_extend_pos_conventional.OrderReceipt" t-inherit="pos_conventional_receipt.OrderReceipt" t-inherit-mode="extension">
         <xpath expr="//div[hasclass('pos-receipt')]" position="inside">
             <div style="text-align: center; font-size: 11px; margin-top: 10px;">
                 No Refunds/ No Reembolso
             </div>
+        </xpath>
+
+        <!-- Mostrar dinero entregado y cambio si hay pago en efectivo.
+             Ahora usamos los datos crudos que vienen del servidor en props.data.payment_ids
+             (enriquecidos por este módulo) para asegurar detección fiable. -->
+        <!-- Insertar el bloque de efectivo justo ANTES del Total en la plantilla base
+             (target específico: el div que contiene la clase "receipt-total"). -->
+        <xpath expr="//div[contains(@class, 'receipt-total')]" position="before">
+            <t t-set="rawPayments" t-value="(props.data &amp;&amp; props.data.payment_ids) ? props.data.payment_ids : []"/>
+            <t t-set="cashLines" t-value="(function(){return rawPayments.filter(function(p){
+                    if(!p) return false;
+                    if(typeof p.payment_method_is_cash_count !== 'undefined'){
+                        return !!p.payment_method_is_cash_count;
+                    }
+                    if(p.payment_method_type === 'cash'){
+                        return true;
+                    }
+                    var pm = p.payment_method_id;
+                    var name = '';
+                    if(Array.isArray(pm)) name = (pm[1] || '').toString().toLowerCase();
+                    else if(pm &amp;&amp; pm.name) name = (pm.name || '').toString().toLowerCase();
+                    return name.indexOf('efectiv') !== -1 || name.indexOf('cash') !== -1;
+                });})()"/>
+            <t t-if="cashLines &amp;&amp; cashLines.length">
+                <t t-set="cashPaid" t-value="(function(){return cashLines.reduce(function(acc,p){return acc + (p.amount || 0);},0);})()"/>
+                <t t-set="_total" t-value="(props.data &amp;&amp; typeof props.data.amount_total !== 'undefined') ? props.data.amount_total : (order &amp;&amp; typeof order.amount_total !== 'undefined' ? order.amount_total : 0)"/>
+                <t t-set="_change" t-value="(function(){ return (cashPaid || 0) - (_total || 0); })()"/>
+                <div style="font-size: 11px; margin-top: 6px; font-family: 'Lucida Console', 'DejaVu Sans Mono', monospace;">
+                    <div class="d-flex">
+                        <span style="flex: 1; text-align: left;">Total entregado</span>
+                        <span class="pos-receipt-right-align font-monospace"><t t-out="formatCurrency(cashPaid)"/></span>
+                    </div>
+                    <div class="d-flex">
+                        <span style="flex: 1; text-align: left;">Cambio</span>
+                        <span class="pos-receipt-right-align font-monospace"><t t-out="formatCurrency(_change &gt;= 0 ? _change : 0)"/></span>
+                    </div>
+                </div>
+            </t>
         </xpath>
     </t>
 
@@ -21,6 +59,51 @@
             <li t-if="vals.discount" class="price-per-unit">
                 <i class="fa fa-tag pe-1"/><em><t t-esc="vals.discount" />% </em> (<t t-esc="vals.discountAmount" />) descuento sobre <t t-esc="vals.noDiscountPrice"/>
             </li>
+        </xpath>
+    </t>
+
+    <!-- Fallback: insertar directamente en la plantilla base point_of_sale.OrderReceipt
+         para asegurar que el bloque de efectivo aparece aunque otra capa de herencia
+         reemplace las plantillas intermedias. Mantener en custom/src según petición. -->
+    <t t-name="luis_botello_extend_pos_conventional.PointOfSaleOrderReceipt" t-inherit="point_of_sale.OrderReceipt" t-inherit-mode="extension">
+        <!-- Fallback: insertar directamente justo ANTES del bloque TOTAL de la plantilla base -->
+        <xpath expr="//div[contains(@class, 'receipt-total')]" position="before">
+            <!-- Debug / marcador visible para confirmar que heredamos la plantilla correcta -->
+            <div style="border-top:1px dashed #ccc; margin-top:6px; padding-top:6px; font-size:10px; text-align:center; color:#333; background:#fbfbfb;">
+                HEREDADO DIRECTO: luis_botello_extend_pos_conventional (point_of_sale.OrderReceipt)
+            </div>
+            <!-- Bloque de efectivo: mostrará Dinero entregado / Cambio devuelto si el servidor
+                 incluye payment_ids con flags o si se infiere por nombre -->
+            <t t-set="rawPayments" t-value="(props.data &amp;&amp; props.data.payment_ids) ? props.data.payment_ids : []"/>
+            <t t-set="cashLines" t-value="(function(){return rawPayments.filter(function(p){
+                    if(!p) return false;
+                    if(typeof p.payment_method_is_cash_count !== 'undefined'){
+                        return !!p.payment_method_is_cash_count;
+                    }
+                    if(p.payment_method_type === 'cash'){
+                        return true;
+                    }
+                    var pm = p.payment_method_id;
+                    var name = '';
+                    if(Array.isArray(pm)) name = (pm[1] || '').toString().toLowerCase();
+                    else if(pm &amp;&amp; pm.name) name = (pm.name || '').toString().toLowerCase();
+                    return name.indexOf('efectiv') !== -1 || name.indexOf('cash') !== -1;
+                });})()"/>
+            <t t-if="cashLines &amp;&amp; cashLines.length">
+                <t t-set="cashPaid" t-value="(function(){return cashLines.reduce(function(acc,p){return acc + (p.amount || 0);},0);})()"/>
+                <t t-set="_total" t-value="(props.data &amp;&amp; typeof props.data.amount_total !== 'undefined') ? props.data.amount_total : (order &amp;&amp; typeof order.amount_total !== 'undefined' ? order.amount_total : 0)"/>
+                <t t-set="_change" t-value="(function(){ return (cashPaid || 0) - (_total || 0); })()"/>
+                <div style="font-size: 11px; margin-top: 6px; font-family: 'Lucida Console', 'DejaVu Sans Mono', monospace;">
+                    <div class="d-flex">
+                        <span style="flex: 1; text-align: left;">Total entregado</span>
+                        <span class="pos-receipt-right-align font-monospace"><t t-out="formatCurrency(cashPaid)"/></span>
+                    </div>
+                    <div class="d-flex">
+                        <span style="flex: 1; text-align: left;">Cambio</span>
+                        <span class="pos-receipt-right-align font-monospace"><t t-out="formatCurrency(_change &gt;= 0 ? _change : 0)"/></span>
+                    </div>
+                </div>
+            </t>
         </xpath>
     </t>
 </templates>
