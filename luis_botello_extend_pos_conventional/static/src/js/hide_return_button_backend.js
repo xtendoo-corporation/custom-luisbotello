@@ -1,6 +1,6 @@
 /** @odoo-module */
 
-import rpc from 'web.rpc';
+import { rpc } from "@web/core/network/rpc";
 
 const HIDE_TEXT = 'Devolver';
 
@@ -64,10 +64,11 @@ async function checkAndMaybeHide() {
         if (!sessionId) {
             return;
         }
-        const sessions = await rpc.query({
+        const sessions = await rpc('/web/dataset/call_kw', {
             model: 'pos.session',
             method: 'read',
             args: [[sessionId], ['config_id']],
+            kwargs: {},
         });
         if (!sessions || !sessions[0]) {
             return;
@@ -76,10 +77,11 @@ async function checkAndMaybeHide() {
         if (!config) {
             return;
         }
-        const configs = await rpc.query({
+        const configs = await rpc('/web/dataset/call_kw', {
             model: 'pos.config',
             method: 'read',
             args: [[config], ['hide_return_button']],
+            kwargs: {},
         });
         if (configs && configs[0] && configs[0].hide_return_button) {
             hideReturnButtons();

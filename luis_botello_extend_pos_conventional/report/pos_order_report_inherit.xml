@@ -25,8 +25,8 @@
                 </t>
                 <t t-if="not _price_no_disc and line.move_id.pos_order_ids and line.product_id">
                     <t t-set="pos_line" t-value="line.move_id.pos_order_ids[0].lines.filtered(lambda l: l.product_id == line.product_id and abs(l.qty) == abs(line.quantity))[:1]"/>
-                    <t t-if="pos_line and (pos_line.price_unit or pos_line.displayPriceNoDiscount)">
-                        <t t-set="_price_no_disc" t-value="pos_line.price_unit or pos_line.displayPriceNoDiscount"/>
+                    <t t-if="pos_line and pos_line.price_unit">
+                        <t t-set="_price_no_disc" t-value="pos_line.price_unit"/>
                     </t>
                 </t>
                 <t t-if="_price_no_disc">
@@ -88,9 +88,6 @@
                 <t t-set="_price_no_disc" t-value="None"/>
                 <t t-if="line.price_unit">
                     <t t-set="_price_no_disc" t-value="line.price_unit"/>
-                </t>
-                <t t-if="not _price_no_disc and line.displayPriceNoDiscount">
-                    <t t-set="_price_no_disc" t-value="line.displayPriceNoDiscount"/>
                 </t>
                 <t t-if="_price_no_disc">
                     <span t-esc="'%.2f €' % _price_no_disc"/>
