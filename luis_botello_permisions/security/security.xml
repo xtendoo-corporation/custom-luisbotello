@@ -15,5 +15,34 @@
         <field name="privilege_id" ref="res_groups_privilege_luis_botello"/>
         <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
     </record>
+
+    <record id="group_warehouse_transfer" model="res.groups">
+        <field name="name">Traspasos entre almacenes</field>
+        <field name="privilege_id" ref="res_groups_privilege_luis_botello"/>
+        <field name="implied_ids" eval="[(4, ref('stock.group_stock_user'))]"/>
+        <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
+    </record>
+
+    <record id="rule_stock_picking_no_transfer" model="ir.rule">
+        <field name="name">Traspasos entre almacenes: usuarios de stock sin permiso</field>
+        <field name="model_id" ref="stock.model_stock_picking"/>
+        <field name="groups" eval="[(4, ref('stock.group_stock_user'))]"/>
+        <field name="domain_force">[('picking_type_id.code', '!=', 'internal')]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <record id="rule_stock_picking_transfer" model="ir.rule">
+        <field name="name">Traspasos entre almacenes: usuarios con permiso</field>
+        <field name="model_id" ref="stock.model_stock_picking"/>
+        <field name="groups" eval="[(4, ref('group_warehouse_transfer'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
 </odoo>
 

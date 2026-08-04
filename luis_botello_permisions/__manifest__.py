@@ -12,7 +12,8 @@
         "account_invoice_margin",
         "product",
         "pos_conventional_core",
-        "purchase"
+        "purchase",
+        "stock"
     ],
     "data": [
         "security/security.xml",
