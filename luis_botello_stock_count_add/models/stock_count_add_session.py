@@ -160,7 +160,7 @@ class StockCountAddSession(models.TransientModel):
             "context": {"inventory_mode": True},
         }
         list_view = self.env.ref(
-            "stock.view_stock_quant_tree_inventory_editable", False
+            "luis_botello_stock_count_add.view_stock_quant_tree_count_add", False
         )
         if list_view:
             action["views"] = [(list_view.id, "list")]

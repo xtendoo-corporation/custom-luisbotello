@@ -156,6 +156,17 @@ class TestStockCountAdd(TransactionCase):
         with self.assertRaises(UserError):
             session.action_confirm()
 
+    def test_finish_uses_product_first_view(self):
+        """Finalizar abre el inventario físico con la vista producto-primero."""
+        session = self.Session.create({"location_id": self.loc_a.id})
+        self._add(session, self.product, qty=1.0)
+        action = session.action_finish()
+        self.assertEqual(action["res_model"], "stock.quant")
+        view = self.env.ref(
+            "luis_botello_stock_count_add.view_stock_quant_tree_count_add"
+        )
+        self.assertEqual(action["views"], [(view.id, "list")])
+
     def test_summed_message_shows_total(self):
         """Al sumar, el aviso muestra existían + encontradas = total."""
         session = self.Session.create({"location_id": self.loc_a.id})
