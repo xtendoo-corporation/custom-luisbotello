@@ -7,6 +7,8 @@
         <field name="arch" type="xml">
             <form string="Conteo aditivo">
                 <sheet>
+                    <field name="last_message" widget="html" nolabel="1"
+                           readonly="1" invisible="not last_message"/>
                     <group>
                         <group string="Sesión">
                             <field name="location_id"

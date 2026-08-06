@@ -67,6 +67,12 @@ class StockCountAddSession(models.TransientModel):
         help="Campo para lector keyboard-wedge. Resuelve el código a producto, "
         "empaquetado (product.uom) o lote, y ajusta la cantidad.",
     )
+    last_message = fields.Html(
+        string="Resultado",
+        readonly=True,
+        help="Resultado de la última entrada confirmada, con el desglose del "
+        "total acumulado cuando se suman cantidades.",
+    )
 
     # ------------------------------------------------------------------
     # Barcode
@@ -129,9 +135,17 @@ class StockCountAddSession(models.TransientModel):
         """
         self.ensure_one()
         self._check_input()
-        quant = self._set_counted_quantity()
+        product = self.product_id
+        location = self.location_id
+        lot = self.lot_id
+        added = self.qty
+        quant, was_summed, previous_qty = self._set_counted_quantity()
         self._log_entry(quant)
-        return self._reopen_action()
+        message = self._build_result_message(
+            product, location, lot, added, was_summed, previous_qty,
+            quant.inventory_quantity,
+        )
+        return self._reopen_action(message)
 
     def action_finish(self):
         """Cierra la sesión y abre el Inventario físico filtrado por lo contado."""
@@ -198,8 +212,12 @@ class StockCountAddSession(models.TransientModel):
         quant = quant[:1]
 
         if quant and quant in self.touched_quant_ids:
-            counted = quant.inventory_quantity + self.qty
+            was_summed = True
+            previous_qty = quant.inventory_quantity
+            counted = previous_qty + self.qty
         else:
+            was_summed = False
+            previous_qty = 0.0
             counted = self.qty
 
         if quant:
@@ -215,7 +233,43 @@ class StockCountAddSession(models.TransientModel):
                 }
             )
         self.touched_quant_ids = [(4, quant.id)]
-        return quant
+        return quant, was_summed, previous_qty
+
+    def _format_qty(self, value):
+        text = "{:.3f}".format(value or 0.0).rstrip("0").rstrip(".")
+        return text or "0"
+
+    def _build_result_message(self, product, location, lot, added,
+                              was_summed, previous_qty, total_qty):
+        """Construye el aviso HTML mostrado tras confirmar una entrada."""
+        added_txt = self._format_qty(added)
+        total_txt = self._format_qty(total_qty)
+        lot_txt = _(" · Lote %s") % lot.display_name if lot else ""
+        header = _("%(product)s · %(location)s%(lot)s") % {
+            "product": product.display_name,
+            "location": location.display_name,
+            "lot": lot_txt,
+        }
+        if was_summed:
+            previous_txt = self._format_qty(previous_qty)
+            detail = _(
+                "Se SUMARON %(added)s uds. Total: existían %(previous)s + "
+                "encontradas %(added)s = <strong>%(total)s uds</strong>."
+            ) % {
+                "added": added_txt,
+                "previous": previous_txt,
+                "total": total_txt,
+            }
+            alert = "alert-success"
+        else:
+            detail = _(
+                "Cantidad FIJADA: <strong>%(total)s uds</strong>."
+            ) % {"total": total_txt}
+            alert = "alert-info"
+        return (
+            '<div class="alert %s mb-0" role="alert">'
+            '<div class="small text-muted">%s</div>%s</div>'
+        ) % (alert, header, detail)
 
     def _log_entry(self, quant):
         self.env["stock.count.add.line"].create(
@@ -230,7 +284,7 @@ class StockCountAddSession(models.TransientModel):
             }
         )
 
-    def _reopen_action(self):
+    def _reopen_action(self, message=False):
         """Reabre el MISMO registro limpiando solo los campos de entrada."""
         self.write(
             {
@@ -239,6 +293,7 @@ class StockCountAddSession(models.TransientModel):
                 "package_id": False,
                 "qty": 1.0,
                 "barcode": False,
+                "last_message": message or False,
             }
         )
         return {

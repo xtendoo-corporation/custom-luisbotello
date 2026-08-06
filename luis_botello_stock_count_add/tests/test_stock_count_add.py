@@ -156,6 +156,17 @@ class TestStockCountAdd(TransactionCase):
         with self.assertRaises(UserError):
             session.action_confirm()
 
+    def test_summed_message_shows_total(self):
+        """Al sumar, el aviso muestra existían + encontradas = total."""
+        session = self.Session.create({"location_id": self.loc_a.id})
+        self._add(session, self.product, qty=10.0)
+        self.assertIn("FIJADA", session.last_message)
+        self._add(session, self.product, qty=10.0)
+        self.assertIn("SUMARON", session.last_message)
+        self.assertIn("existían 10", session.last_message)
+        self.assertIn("encontradas 10", session.last_message)
+        self.assertIn("20", session.last_message)
+
     def test_confirm_reopens_and_clears_inputs(self):
         """Confirmar reabre el mismo registro y limpia solo los campos de entrada."""
         session = self.Session.create({"location_id": self.loc_a.id})
