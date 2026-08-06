@@ -1,3 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_stock_count_add_session_user,stock.count.add.session user,model_stock_count_add_session,stock.group_stock_user,1,1,1,1
-access_stock_count_add_line_user,stock.count.add.line user,model_stock_count_add_line,stock.group_stock_user,1,1,1,1
