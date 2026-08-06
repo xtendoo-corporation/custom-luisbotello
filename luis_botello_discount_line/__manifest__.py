@@ -12,6 +12,7 @@
         # después de los módulos POS convencionales de Xtendoo
         'pos_conventional_core',
         'pos_conventional_order_barcode',
+        'pos_conventional_barcode_scanner',
     ],
     'data': [
         'views/account_move_views.xml',

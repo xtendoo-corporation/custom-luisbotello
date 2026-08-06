@@ -3,6 +3,16 @@ from odoo import models
 class PosOrder(models.Model):
     _inherit = 'pos.order'
 
+    def _get_existing_scanned_product_line(self, product):
+        """Forzar una nueva línea por escaneo en POS convencional.
+
+        `pos_conventional_barcode_scanner` busca una línea existente para sumar
+        cantidad. Devolviendo un recordset vacío evitamos ese merge y dejamos que
+        el flujo cree siempre una línea nueva con qty=1.
+        """
+        self.ensure_one()
+        return self.env['pos.order.line']
+
     def _get_invoice_lines_values(self, line_values, pos_line, move_type):
         res = super(PosOrder, self)._get_invoice_lines_values(line_values, pos_line, move_type)
         if pos_line and 'discount_line' in pos_line._fields:
