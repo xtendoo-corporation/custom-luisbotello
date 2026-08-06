@@ -10,16 +10,8 @@
     "category": "Inventory",
     "depends": [
         "stock",
-        # Recomendado: bloquea el conteo si hay movimientos hechos y sin validar
-        # sobre el producto/ubicacion/lote. No disponible en el checkout 19.0 de
-        # OCA/stock-logistics-warehouse; activar cuando exista la rama 19.0.
-        # "stock_quant_safe_inventory",
     ],
-    "data": [
-        "security/ir.model.access.csv",
-        "views/stock_count_add_session_views.xml",
-        "views/stock_count_add_menus.xml",
-    ],
+    "data": [],
     "installable": True,
     "application": False,
 }
