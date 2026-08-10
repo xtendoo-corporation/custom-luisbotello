@@ -29,8 +29,8 @@ class PosSlugController(http.Controller):
         request.session['active_pos_slug'] = slug
 
         # Redirigimos al tablero de mandos del TPV (Kanban de cajas)
-        # La acción estándar es point_of_sale.action_pos_config_kanban
-        url = '/web#action=point_of_sale.action_pos_config_kanban'
+        # pasando el slug como parámetro para mayor seguridad
+        url = '/web#action=point_of_sale.action_pos_config_kanban&slug=' + slug
         return request.redirect(url)
     
     def _render_error(self, title, message):

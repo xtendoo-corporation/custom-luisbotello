@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="view_pos_order_form_inherit_discount_line" model="ir.ui.view">
-        <field name="name">pos.order.form.inherit.discount.line</field>
-        <field name="model">pos.order</field>
-        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+    <record id="view_pos_order_line_inherit_discount_line" model="ir.ui.view">
+        <field name="name">pos.order.line.inherit.discount.line</field>
+        <field name="model">pos.order.line</field>
+        <!-- Inherit the specific pos.order.line list view to add the extra column -->
+        <field name="inherit_id" ref="point_of_sale.view_pos_order_line"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='lines']/list/field[@name='discount']" position="after">
+            <!-- Target the discount field in the order lines list view directly. -->
+            <xpath expr="//field[@name='discount']" position="after">
                 <field name="discount_line" string="Desc. Lin" optional="show"/>
             </xpath>
         </field>
