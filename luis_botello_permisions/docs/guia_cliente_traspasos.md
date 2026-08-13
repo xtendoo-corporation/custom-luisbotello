@@ -8,7 +8,8 @@ pedisteis. Aquí tenéis, en lenguaje sencillo, qué cambia y cómo trabajar.
 ## Qué hace
 
 - Solo algunas personas pueden **crear traspasos** de mercancía entre almacenes.
-- El resto **puede recepcionar** la mercancía cuando llega, pero no crear traspasos.
+- Las personas con el permiso **Recepcionar traspasos entre almacenes** pueden
+  validar la recepción de mercancía cuando llega, pero no crear traspasos.
 
 ## Quién puede hacer qué
 
@@ -32,15 +33,15 @@ pedisteis. Aquí tenéis, en lenguaje sencillo, qué cambia y cómo trabajar.
 
 1. En el **almacén de origen**, una de las personas autorizadas crea el traspaso y lo
    valida (la mercancía "sale").
-2. En el **almacén de destino**, **cualquier persona** valida la **recepción** cuando
-   la mercancía llega.
+2. En el **almacén de destino**, una persona con el permiso **Recepcionar traspasos
+   entre almacenes** valida la **recepción** cuando la mercancía llega.
 
 ## Qué verá cada usuario
 
 - Si una persona **autorizada** crea un traspaso: funciona con normalidad.
-- Si una persona **no autorizada** intenta crear o validar un traspaso: Odoo mostrará
-  un aviso de que no tiene permiso.
-- Todas las personas pueden **ver** los traspasos y **recepcionar** con normalidad.
+- Si una persona sin ninguno de los dos permisos intenta crear o validar un
+  traspaso: Odoo mostrará un aviso de que no tiene permiso.
+- El permiso de recepción no habilita la creación de traspasos.
 
 ## Cómo dar o quitar el permiso a alguien
 
@@ -48,8 +49,9 @@ Si en el futuro queréis que otra persona pueda hacer traspasos (o dejar de hace
 
 1. Entrad en **Ajustes → Usuarios y compañías → Usuarios**.
 2. Abrid el usuario.
-3. En el apartado **Permisos Especiales**, marcad o desmarcad el grupo
-   **Traspasos entre almacenes**.
+3. En el apartado **Permisos Especiales**, asignad según corresponda:
+   - **Traspasos entre almacenes** para crear y validar traspasos.
+   - **Recepcionar traspasos entre almacenes** para validar recepciones sin crear.
 4. Guardad.
 
 ## Nota importante

@@ -66,6 +66,8 @@ class TestWarehouseTransferPermissions(TransactionCase):
         super().setUp()
         self.group_transfer = self.env.ref(
             'luis_botello_permisions.group_warehouse_transfer')
+        self.group_transfer_receiver = self.env.ref(
+            'luis_botello_permisions.group_warehouse_transfer_receiver')
         self.pt_internal = self.env.ref('stock.picking_type_internal')
         self.pt_in = self.env.ref('stock.picking_type_in')
         self.loc_stock = self.env.ref('stock.stock_location_stock')
@@ -90,6 +92,17 @@ class TestWarehouseTransferPermissions(TransactionCase):
             'group_ids': [(6, 0, [
                 self.env.ref('base.group_user').id,
                 self.group_transfer.id,
+            ])],
+        })
+
+        # Usuario que puede validar la recepción, pero no crear traspasos.
+        self.user_transfer_receiver = self.env['res.users'].create({
+            'name': 'Stock User Transfer Receiver',
+            'login': 'stock_user_transfer_receiver',
+            'email': 'stock_transfer_receiver@test.com',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.group_transfer_receiver.id,
             ])],
         })
 
@@ -142,3 +155,23 @@ class TestWarehouseTransferPermissions(TransactionCase):
         with self.assertRaises(AccessError):
             picking.with_user(self.user_stock).write(
                 {'origin': 'bloqueado'})
+
+    def test_15_receiver_can_write_internal_but_cannot_create_it(self):
+        """El grupo de recepción valida existentes sin poder crear traspasos."""
+        self.assertTrue(self.user_transfer_receiver.has_group(
+            'stock.group_stock_user'))
+        self.assertTrue(self.user_transfer_receiver.has_group(
+            'luis_botello_permisions.group_warehouse_transfer_receiver'))
+        self.assertFalse(self.user_transfer_receiver.has_group(
+            'luis_botello_permisions.group_warehouse_transfer'))
+
+        with self.assertRaises(AccessError):
+            self.env['stock.picking'].with_user(
+                self.user_transfer_receiver).create(self._internal_vals())
+
+        picking = self.env['stock.picking'].create(self._internal_vals())
+        picking.with_user(self.user_transfer_receiver).write(
+            {'origin': 'recepcionado por usuario autorizado'})
+        self.assertEqual(
+            picking.with_user(self.user_transfer_receiver).origin,
+            'recepcionado por usuario autorizado')
