@@ -4,6 +4,10 @@ from odoo.http import request
 
 class PosSlugController(http.Controller):
 
+    @staticmethod
+    def _get_pos_ui_url(pos_config):
+        return f'/pos/ui/{pos_config.id}'
+
     @http.route('/pos/web/<string:slug>', type='http', auth="user")
     def pos_slug_access(self, slug, **kwargs):
         # Validamos que exista una pos.config con este slug
@@ -28,9 +32,9 @@ class PosSlugController(http.Controller):
         # Guardamos el slug en la sesión del usuario para persistencia
         request.session['active_pos_slug'] = slug
 
-        # Redirigimos al tablero de mandos del TPV (Kanban de cajas)
-        # pasando el slug como parámetro para mayor seguridad
-        url = '/web#action=point_of_sale.action_pos_config_kanban&slug=' + slug
+        # Abrimos la UI estándar con la configuración exacta. Redirigir al
+        # kanban deja que Odoo escoja la primera caja autorizada.
+        url = self._get_pos_ui_url(pos_config)
         return request.redirect(url)
     
     def _render_error(self, title, message):
@@ -105,4 +109,3 @@ class PosSlugController(http.Controller):
         if 'active_pos_slug' in request.session:
             del request.session['active_pos_slug']
         return request.redirect('/web#action=point_of_sale.action_pos_config_kanban')
-
