@@ -6,7 +6,7 @@ class PosSlugController(http.Controller):
 
     @staticmethod
     def _get_pos_conventional_url(pos_config):
-        return f'/odoo/point-of-sale/{pos_config.id}/pos-orders'
+        return '/odoo/point-of-sale'
 
     @http.route('/pos/web/<string:slug>', type='http', auth="user")
     def pos_slug_access(self, slug, **kwargs):
@@ -32,8 +32,7 @@ class PosSlugController(http.Controller):
         # Guardamos el slug en la sesión del usuario para persistencia
         request.session['active_pos_slug'] = slug
 
-        # Abrimos la UI estándar con la configuración exacta. Redirigir al
-        # kanban deja que Odoo escoja la primera caja autorizada.
+        # La sesión limita las cajas que Odoo mostrará en la UI estándar.
         url = self._get_pos_conventional_url(pos_config)
         return request.redirect(url)
 
@@ -102,10 +101,3 @@ class PosSlugController(http.Controller):
         </html>
         """
         return request.make_response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
-
-    @http.route('/pos/web/clear', type='http', auth="user")
-    def pos_slug_clear(self, **kwargs):
-        # Ruta opcional para limpiar el filtro y ver todas las cajas
-        if 'active_pos_slug' in request.session:
-            del request.session['active_pos_slug']
-        return request.redirect('/web#action=point_of_sale.action_pos_config_kanban')
