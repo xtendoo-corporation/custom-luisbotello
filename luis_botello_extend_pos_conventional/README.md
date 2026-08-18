@@ -86,7 +86,7 @@ odoo --stop-after-init -u luis_botello_extend_pos_conventional -d <nombre_bd>
 4. Introducir el identificador (p. ej. `tienda-norte`).
 5. El campo **«URL de acceso directo»** mostrará la URL completa.
 
-Acceso: `/pos/web/tienda-norte` → abre directamente la interfaz POS de esa caja.
+Acceso: `/pos/web/tienda-norte` → abre directamente los pedidos POS de esa caja.
 
 ### Ocultar botón Devolver
 
@@ -122,8 +122,8 @@ También configurable en **Punto de Venta → Configuración → Ajustes**.
 2. El controlador busca `pos.config` con ese `access_slug`.
 3. Verifica acceso con `user._can_access_pos_config(pos_config)`.
 4. Guarda el slug en la sesión del usuario.
-5. Redirige a `/pos/ui/<config_id>`, la ruta estándar de Odoo que abre
-   exactamente la caja encontrada por el slug.
+5. Redirige a `/odoo/point-of-sale/<config_id>/pos-orders`, la ruta del POS
+   convencional que abre exactamente la caja encontrada por el slug.
 
 ---
 
@@ -246,7 +246,7 @@ No existe fichero `security/ir.model.access.csv`.
 - Si `/pos/web/<slug>` devuelve error de acceso denegado, revise la implementación
   del método `_can_access_pos_config` (ver Limitaciones).
 - Si el slug abre otra caja, compruebe que la respuesta redirige a
-  `/pos/ui/<config_id>` y no al kanban general. También revise que el slug no esté
+  `/odoo/point-of-sale/<config_id>/pos-orders` y no al kanban general. También revise que el slug no esté
   duplicado.
 
 ---

@@ -5,8 +5,8 @@ from odoo.http import request
 class PosSlugController(http.Controller):
 
     @staticmethod
-    def _get_pos_ui_url(pos_config):
-        return f'/pos/ui/{pos_config.id}'
+    def _get_pos_conventional_url(pos_config):
+        return f'/odoo/point-of-sale/{pos_config.id}/pos-orders'
 
     @http.route('/pos/web/<string:slug>', type='http', auth="user")
     def pos_slug_access(self, slug, **kwargs):
@@ -14,29 +14,29 @@ class PosSlugController(http.Controller):
         pos_config = request.env['pos.config'].sudo().search(
             [('access_slug', '=', slug)], limit=1
         )
-        
+
         if not pos_config:
             # Si no existe el slug, mostramos un error amigable
             return self._render_error(
                 f"Punto de venta no encontrado",
                 f"No existe ningún punto de venta con el identificador '{slug}'"
             )
-        
+
         # Verificamos que el usuario tenga acceso a esta POS
         if not request.env.user._can_access_pos_config(pos_config):
             return self._render_error(
                 "Acceso denegado",
                 f"No tienes permiso para acceder al punto de venta '{pos_config.name}'"
             )
-        
+
         # Guardamos el slug en la sesión del usuario para persistencia
         request.session['active_pos_slug'] = slug
 
         # Abrimos la UI estándar con la configuración exacta. Redirigir al
         # kanban deja que Odoo escoja la primera caja autorizada.
-        url = self._get_pos_ui_url(pos_config)
+        url = self._get_pos_conventional_url(pos_config)
         return request.redirect(url)
-    
+
     def _render_error(self, title, message):
         """Renderiza una página de error amigable"""
         html = f"""
