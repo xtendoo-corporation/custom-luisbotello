@@ -15,6 +15,7 @@
     "assets": {
         "web.assets_backend": [
             "luis_botello_stock_count_add/static/src/js/relational_model_similar_records_patch.js",
+            "luis_botello_stock_count_add/static/src/js/record_merge_reload_patch.js",
         ],
     },
     "installable": True,
