@@ -65,9 +65,13 @@ class StockQuantMerge(models.Model):
                     # Nuevo comportamiento: si el quant ya tenía un inventory_quantity_set (otro conteo previo), sumamos
                     if quant.inventory_quantity_set:
                         existing = float(quant.inventory_quantity or 0.0)
-                        quant.inventory_quantity = existing + float(inventory_quantity or 0.0)
+                        counted_quantity = existing + float(inventory_quantity or 0.0)
                     else:
-                        quant.inventory_quantity = inventory_quantity
+                        counted_quantity = inventory_quantity
+                    quant.write({
+                        'inventory_quantity': counted_quantity,
+                        'inventory_quantity_set': True,
+                    })
                     quant.user_id = vals.get('user_id', self.env.user.id)
                     quant.inventory_date = fields.Date.today()
                 quants |= quant
@@ -80,4 +84,3 @@ class StockQuantMerge(models.Model):
                 if self._is_inventory_mode() and quant.company_id:
                     quant._check_company()
         return quants
-
