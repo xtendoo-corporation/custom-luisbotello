@@ -126,6 +126,13 @@ No existe fichero `security/ir.model.access.csv`.
 - No incluye datos de demo ni de inicialización.
 - No hay vistas ni datos XML.
 
+La vista estándar de ajuste de inventario también incorpora una mejora de teclado
+limitada al contexto `inventory_mode`: las nuevas líneas heredan la última ubicación
+seleccionada, el foco comienza en `product_id`, y `TAB` salta a `inventory_quantity`
+(o a `lot_id` para productos por lote o serie). `ENTER` en la cantidad conserva el
+guardado estándar y prepara la siguiente línea sin modificar la navegación de otras
+listas de Odoo.
+
 ---
 
 ## Pruebas existentes
