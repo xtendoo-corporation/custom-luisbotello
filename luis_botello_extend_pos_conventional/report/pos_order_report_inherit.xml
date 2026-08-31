@@ -1,46 +1,81 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" ?>
 <odoo>
-    <template id="report_factura_simplificada_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_factura_simplificada_80mm">
+    <template
+    id="report_factura_simplificada_80mm_inherit_luis"
+    inherit_id="pos_conventional_receipt_custom.report_factura_simplificada_80mm"
+    priority="99"
+  >
         <xpath expr="//style" position="inside">
-            /* Aumentar ancho de columna PRECIO para mejor legibilidad */
-            .col-desc { width: 20%; text-align: center; }
-            .col-name { width: 50% !important; }
+            .ticket-line-description {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .ticket-line-details {
+                font-size: 0.85em;
+                white-space: nowrap;
+            }
+            .ticket-line-details td {
+                padding-top: 0;
+                padding-bottom: 3px;
+            }
         </xpath>
 
-        <xpath expr="//thead//th[hasclass('col-name')]" position="after">
-            <th class="text-center col-desc">PRECIO</th>
-        </xpath>
-
-        <xpath expr="//td[hasclass('col-name')]" position="attributes">
-            <attribute name="style">white-space: normal; padding-right: 2px;</attribute>
-        </xpath>
-
-        <xpath expr="//td[hasclass('col-name')]" position="after">
-            <td class="text-center col-desc">
-                <!-- Mostrar precio unitario sin descuento -->
-                <t t-set="_price_no_disc" t-value="None"/>
-                <!-- Evitar llamadas a builtins que no están en el contexto QWeb. Usar acceso directo a atributos. -->
-                <t t-if="line.price_unit">
-                    <t t-set="_price_no_disc" t-value="line.price_unit"/>
-                </t>
-                <t t-if="not _price_no_disc and line.move_id.pos_order_ids and line.product_id">
-                    <t t-set="pos_line" t-value="line.move_id.pos_order_ids[0].lines.filtered(lambda l: l.product_id == line.product_id and abs(l.qty) == abs(line.quantity))[:1]"/>
-                    <t t-if="pos_line and pos_line.price_unit">
-                        <t t-set="_price_no_disc" t-value="pos_line.price_unit"/>
+        <xpath expr="//table[.//th[hasclass('col-name')]]" position="replace">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="text-center">Precio</th>
+                        <th class="text-center"> </th>
+                        <th class="text-center"> </th>
+                        <th class="text-center">Ud</th>
+                        <th class="text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <t t-foreach="o.invoice_line_ids" t-as="line">
+                        <tr t-if="line.display_type == 'product'">
+                            <td colspan="5" class="text-left ticket-line-description">
+                                <span t-field="line.name" />
+                            </td>
+                        </tr>
+                        <tr
+              t-if="line.display_type == 'product'"
+              class="ticket-line-details"
+            >
+                            <td class="text-center">
+                                <span t-esc="'%.2f €' % line.price_unit" />
+                            </td>
+                            <td class="text-center">
+                                <span
+                  t-if="line.discount"
+                  t-esc="'-' + ('%.2f' % line.discount) + '%'"
+                />
+                            </td>
+                            <td class="text-center">
+                                <span
+                  t-if="line.discount_line"
+                  t-esc="'%.2f €' % (line.discount_line)"
+                />
+                            </td>
+                            <td class="text-center">
+                                <span t-esc="'%.2f' % line.quantity" />
+                            </td>
+                            <td class="text-right">
+                                <span t-esc="'%.2f €' % line.price_total" />
+                            </td>
+                        </tr>
                     </t>
-                </t>
-                <t t-if="_price_no_disc">
-                    <span t-esc="'%.2f €' % _price_no_disc"/>
-                </t>
-            </td>
+                </tbody>
+            </table>
         </xpath>
 
         <xpath expr="//span[@t-field='res_company.name']" position="replace">
             <t t-if="o.pos_order_ids">
-                <span t-field="o.pos_order_ids[0].config_id.name"/>
+                <span t-field="o.pos_order_ids[0].config_id.name" />
             </t>
             <t t-else="">
-                <span t-field="res_company.name"/>
+                <span t-field="res_company.name" />
             </t>
         </xpath>
         <!-- Insertar información de efectivo (Dinero entregado / Cambio devuelto) justo ANTES del bloque TOTAL
@@ -48,21 +83,37 @@
              la etiqueta que muestra el total principal: <span t-field="o.amount_total"/> -->
         <xpath expr="//div[span[@t-field='o.amount_total']]" position="before">
             <t t-if="o.pos_order_ids">
-                <t t-set="_pos" t-value="o.pos_order_ids[0]"/>
-                <t t-set="_cash_payments" t-value="[_p for _p in _pos.payment_ids if (_p.payment_method_id and (_p.payment_method_id.is_cash_count or 'efectiv' in (_p.payment_method_id.name or '').lower() or 'cash' in (_p.payment_method_id.name or '').lower()))]"/>
+                <t t-set="_pos" t-value="o.pos_order_ids[0]" />
+                <t
+          t-set="_cash_payments"
+          t-value="[_p for _p in _pos.payment_ids if (_p.payment_method_id and (_p.payment_method_id.is_cash_count or 'efectiv' in (_p.payment_method_id.name or '').lower() or 'cash' in (_p.payment_method_id.name or '').lower()))]"
+        />
                 <t t-if="_cash_payments and len(_cash_payments) &gt; 0">
-                    <t t-set="_cash_sum" t-value="sum([p.amount for p in _cash_payments if p.amount &gt;= 0])"/>
-                    <t t-set="_change" t-value="(_cash_sum - (o.amount_total or 0.0))"/>
+                    <t
+            t-set="_cash_sum"
+            t-value="sum([p.amount for p in _cash_payments if p.amount &gt;= 0])"
+          />
+                    <t
+            t-set="_change"
+            t-value="(_cash_sum - (o.amount_total or 0.0))"
+          />
                     <div class="text-right" style="margin-top:4px; font-size:0.95em;">
-                        <div>Total entregado: <span t-esc="'%.2f €' % _cash_sum"/></div>
-                        <div>Cambio: <span t-esc="'%.2f €' % (_change if _change &gt;= 0 else 0.0)"/></div>
+                        <div>Total entregado: <span
+                t-esc="'%.2f €' % _cash_sum"
+              /></div>
+                        <div>Cambio: <span
+                t-esc="'%.2f €' % (_change if _change &gt;= 0 else 0.0)"
+              /></div>
                     </div>
                 </t>
             </t>
         </xpath>
         <!-- Aviso final: no devoluciones (insertado antes del texto de despedida) -->
         <!-- Mover el aviso al final: insertarlo DESPUÉS del bloque de despedida para que aparezca al final del recibo -->
-        <xpath expr="//div[contains(normalize-space(.),'Gracias por su visita')]" position="after">
+        <xpath
+      expr="//div[contains(normalize-space(.),'Gracias por su visita')]"
+      position="after"
+    >
             <div class="text-center" style="font-size:0.95em; margin-top:6px;">
                 No se admiten devoluciones / Non returnable items
             </div>
@@ -70,29 +121,70 @@
     </template>
 
 
-    <template id="report_pos_order_80mm_inherit_luis" inherit_id="pos_conventional_receipt_custom.report_pos_order_80mm">
+    <template
+    id="report_pos_order_80mm_inherit_luis"
+    inherit_id="pos_conventional_receipt_custom.report_pos_order_80mm"
+    priority="99"
+  >
         <xpath expr="//style" position="inside">
-            /* Aumentar ancho de columna PRECIO para mejor legibilidad */
-            .col-desc { width: 20%; text-align: center; }
-            .col-name { width: 50% !important; }
+            .ticket-line-description {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .ticket-line-details {
+                font-size: 0.85em;
+                white-space: nowrap;
+            }
+            .ticket-line-details td {
+                padding-top: 0;
+                padding-bottom: 3px;
+            }
         </xpath>
-        <xpath expr="//thead//th[hasclass('col-name')]" position="after">
-            <th class="text-center col-desc">PRECIO</th>
-        </xpath>
-        <xpath expr="//td[hasclass('col-name')]" position="attributes">
-            <attribute name="style">white-space: normal;</attribute>
-        </xpath>
-        <xpath expr="//td[hasclass('col-name')]" position="after">
-            <td class="text-center col-desc">
-                <!-- Mostrar precio unitario sin descuento para líneas POS -->
-                <t t-set="_price_no_disc" t-value="None"/>
-                <t t-if="line.price_unit">
-                    <t t-set="_price_no_disc" t-value="line.price_unit"/>
-                </t>
-                <t t-if="_price_no_disc">
-                    <span t-esc="'%.2f €' % _price_no_disc"/>
-                </t>
-            </td>
+        <xpath expr="//table[.//th[hasclass('col-name')]]" position="replace">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="text-center">PRECIO</th>
+                        <th class="text-center">DTO %</th>
+                        <th class="text-center">DTO LINEAL</th>
+                        <th class="text-center">UD</th>
+                        <th class="text-right">TOTAL LINEA</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <t t-foreach="o.lines" t-as="line">
+                        <tr>
+                            <td colspan="5" class="text-left ticket-line-description">
+                                <span t-field="line.product_id.name" />
+                            </td>
+                        </tr>
+                        <tr class="ticket-line-details">
+                            <td class="text-center">
+                                <span t-esc="'%.2f €' % line.price_unit" />
+                            </td>
+                            <td class="text-center">
+                                <span
+                  t-if="line.discount"
+                  t-esc="'-' + ('%.2f' % line.discount) + '%'"
+                />
+                            </td>
+                            <td class="text-center">
+                                <span
+                  t-if="line.discount"
+                  t-esc="'%.2f €' % (line.price_unit * line.qty * line.discount / 100)"
+                />
+                            </td>
+                            <td class="text-center">
+                                <span t-esc="'%.2f' % line.qty" />
+                            </td>
+                            <td class="text-right">
+                                <span t-esc="'%.2f €' % line.price_subtotal_incl" />
+                            </td>
+                        </tr>
+                    </t>
+                </tbody>
+            </table>
         </xpath>
          <xpath expr="//div[hasclass('page')]" position="inside">
               <div class="text-center" style="font-size: 1em; margin-top: 10px;">
@@ -103,24 +195,45 @@
         <!-- Seleccionamos el div que contiene el span con t-field o.amount_total para evitar coincidir con cabeceras -->
         <xpath expr="//div[span[@t-field='o.amount_total']]" position="before">
             <t t-if="o.payment_ids or o.pos_order_ids">
-                <t t-set="_pos" t-value="(o.pos_order_ids and len(o.pos_order_ids) &gt; 0) and o.pos_order_ids[0] or None"/>
-                <t t-set="_cash_payments" t-value="[]"/>
+                <t
+          t-set="_pos"
+          t-value="(o.pos_order_ids and len(o.pos_order_ids) &gt; 0) and o.pos_order_ids[0] or None"
+        />
+                <t t-set="_cash_payments" t-value="[]" />
                 <t t-if="_pos">
-                    <t t-set="_cash_payments" t-value="[_p for _p in _pos.payment_ids if (_p.payment_method_id and (_p.payment_method_id.is_cash_count or 'efectiv' in (_p.payment_method_id.name or '').lower() or 'cash' in (_p.payment_method_id.name or '').lower()))]"/>
+                    <t
+            t-set="_cash_payments"
+            t-value="[_p for _p in _pos.payment_ids if (_p.payment_method_id and (_p.payment_method_id.is_cash_count or 'efectiv' in (_p.payment_method_id.name or '').lower() or 'cash' in (_p.payment_method_id.name or '').lower()))]"
+          />
                 </t>
-                <t t-if="(_cash_payments and len(_cash_payments) &gt; 0) or (not _pos and o.payment_ids)">
-                    <t t-set="_cash_sum" t-value="( _cash_payments and len(_cash_payments) &gt; 0 ) and sum([p.amount for p in _cash_payments if p.amount &gt;= 0]) or sum([p.amount for p in o.payment_ids if p.amount &gt;= 0])"/>
-                    <t t-set="_base_total" t-value="(_pos and (_pos.amount_total or 0.0)) or (o.amount_total or 0.0)"/>
-                    <t t-set="_change" t-value="(_cash_sum - _base_total)"/>
+                <t
+          t-if="(_cash_payments and len(_cash_payments) &gt; 0) or (not _pos and o.payment_ids)"
+        >
+                    <t
+            t-set="_cash_sum"
+            t-value="( _cash_payments and len(_cash_payments) &gt; 0 ) and sum([p.amount for p in _cash_payments if p.amount &gt;= 0]) or sum([p.amount for p in o.payment_ids if p.amount &gt;= 0])"
+          />
+                    <t
+            t-set="_base_total"
+            t-value="(_pos and (_pos.amount_total or 0.0)) or (o.amount_total or 0.0)"
+          />
+                    <t t-set="_change" t-value="(_cash_sum - _base_total)" />
                     <div class="text-right" style="margin-top:4px; font-size:0.95em;">
-                        <div>Total entregado: <span t-esc="'%.2f €' % _cash_sum"/></div>
-                        <div>Cambio: <span t-esc="'%.2f €' % (_change if _change &gt;= 0 else 0.0)"/></div>
+                        <div>Total entregado: <span
+                t-esc="'%.2f €' % _cash_sum"
+              /></div>
+                        <div>Cambio: <span
+                t-esc="'%.2f €' % (_change if _change &gt;= 0 else 0.0)"
+              /></div>
                     </div>
                 </t>
             </t>
         </xpath>
          <!-- Aviso final: no devoluciones (insertado DESPUÉS del texto de despedida para quedar al final) -->
-         <xpath expr="//div[contains(normalize-space(.),'Gracias por su visita')]" position="after">
+         <xpath
+      expr="//div[contains(normalize-space(.),'Gracias por su visita')]"
+      position="after"
+    >
              <div class="text-center" style="font-size:0.95em; margin-top:6px;">
                  No se admiten devoluciones / Non returnable items
              </div>
