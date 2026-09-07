@@ -6,19 +6,24 @@ from odoo.tests.common import HttpCase, TransactionCase, tagged
 
 from odoo.addons.pos_conventional_core.tests.common import PosConventionalTestCommon
 
-from ..controllers.main import PosSlugAccessGuardController, PosSlugController
+from ..controllers.main import (
+    POS_LOCKED_SLUG_COOKIE,
+    PosSlugAccessGuardController,
+    PosSlugController,
+)
 
 
 @contextlib.contextmanager
-def _fake_http_request(env, active_pos_slug=None):
+def _fake_http_request(env, locked_slug=None):
     """Empuja un odoo.http.request falso en la pila real de Odoo, con el
-    env y el slug activo indicados. Es el mismo mecanismo (_request_stack)
-    que usa un request HTTP real, por lo que también cubre correctamente el
-    ``from odoo.http import request`` local de pos.config._search."""
-    session = {}
-    if active_pos_slug:
-        session["active_pos_slug"] = active_pos_slug
-    fake_request = SimpleNamespace(session=session, env=env)
+    env y la cookie de caja bloqueada indicados. Es el mismo mecanismo
+    (_request_stack) que usa un request HTTP real, por lo que también cubre
+    correctamente el ``from odoo.http import request`` local de
+    pos.config._search."""
+    cookies = {}
+    if locked_slug:
+        cookies[POS_LOCKED_SLUG_COOKIE] = locked_slug
+    fake_request = SimpleNamespace(cookies=cookies, env=env)
     odoo.http._request_stack.push(fake_request)
     try:
         yield fake_request
@@ -38,7 +43,7 @@ class TestPosSlugControllerHelper(TransactionCase):
 @tagged("post_install", "-at_install")
 class TestPosConfigSlugFilter(TransactionCase):
     """El listado estándar de pos.config (kanban del backend) solo debe
-    mostrar la caja fijada por el slug activo en la sesión."""
+    mostrar la caja fijada por la cookie de bloqueo activa."""
 
     @classmethod
     def setUpClass(cls):
@@ -57,7 +62,7 @@ class TestPosConfigSlugFilter(TransactionCase):
         )
 
     def test_search_only_returns_the_pos_selected_by_the_slug(self):
-        with _fake_http_request(self.env, active_pos_slug="selected-pos"):
+        with _fake_http_request(self.env, locked_slug="selected-pos"):
             pos_configs = self.env["pos.config"].search(
                 [
                     ("id", "in", [self.selected_pos.id, self.other_pos.id]),
@@ -66,7 +71,7 @@ class TestPosConfigSlugFilter(TransactionCase):
 
         self.assertEqual(pos_configs, self.selected_pos)
 
-    def test_search_is_not_filtered_without_active_slug(self):
+    def test_search_is_not_filtered_without_locked_slug_cookie(self):
         with _fake_http_request(self.env):
             pos_configs = self.env["pos.config"].search(
                 [
@@ -91,20 +96,20 @@ class TestPosSlugAccessGuardHelper(TransactionCase):
             }
         )
 
-    def test_returns_none_without_active_slug(self):
+    def test_returns_none_without_locked_slug_cookie(self):
         with _fake_http_request(self.env):
             self.assertIsNone(
                 PosSlugAccessGuardController._get_slug_locked_pos_config()
             )
 
     def test_returns_none_for_unknown_slug(self):
-        with _fake_http_request(self.env, active_pos_slug="does-not-exist"):
+        with _fake_http_request(self.env, locked_slug="does-not-exist"):
             self.assertIsNone(
                 PosSlugAccessGuardController._get_slug_locked_pos_config()
             )
 
-    def test_resolves_the_pos_config_matching_the_active_slug(self):
-        with _fake_http_request(self.env, active_pos_slug="locked-pos"):
+    def test_resolves_the_pos_config_matching_the_locked_slug(self):
+        with _fake_http_request(self.env, locked_slug="locked-pos"):
             resolved = PosSlugAccessGuardController._get_slug_locked_pos_config()
 
         self.assertEqual(resolved, self.locked_pos)
@@ -114,7 +119,9 @@ class TestPosSlugAccessGuardHelper(TransactionCase):
 class TestPosSlugAccessIntegration(PosConventionalTestCommon, HttpCase):
     """Pruebas de extremo a extremo del flujo /pos/web/<slug>: un usuario con
     varias cajas permitidas debe quedar limitado a la caja del slug mientras
-    dure su sesión de navegador, tanto en el listado como al abrir la POS."""
+    el navegador conserve la cookie de bloqueo, tanto en el listado como al
+    abrir la POS, y ese bloqueo debe ser independiente de la sesión de
+    login (sobrevive a logout/login, no depende de request.session)."""
 
     @classmethod
     def setUpClass(cls):
@@ -208,12 +215,21 @@ class TestPosSlugAccessIntegration(PosConventionalTestCommon, HttpCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["Location"], "/odoo/point-of-sale")
 
+    def test_valid_slug_sets_the_locked_slug_cookie(self):
+        self.authenticate(self.pos_user.login, self.password)
+
+        self.url_open("/pos/web/caja-a", allow_redirects=False)
+
+        self.assertEqual(
+            self.opener.cookies.get(POS_LOCKED_SLUG_COOKIE), "caja-a"
+        )
+
     def test_slug_forces_pos_config_kanban_to_a_single_result(self):
         self.authenticate(self.pos_user.login, self.password)
         self.url_open("/pos/web/caja-a")
 
         # Simula la petición RPC del kanban de POS tal y como la hace el
-        # cliente web, dentro de la MISMA sesión de navegador ya "fijada".
+        # cliente web, dentro del MISMO navegador (misma cookie de bloqueo).
         payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -228,6 +244,23 @@ class TestPosSlugAccessIntegration(PosConventionalTestCommon, HttpCase):
         result = response.json()["result"]
 
         self.assertEqual([r["id"] for r in result], [self.pos_config.id])
+
+    def test_switching_to_another_allowed_slug_is_not_blocked_by_the_old_lock(self):
+        """Regresión: pos.config._search se invoca también, internamente,
+        dentro de comprobaciones de acceso ajenas (p. ej. leer
+        allowed_pos_config_ids vía sudo()). Si el filtro por cookie se
+        aplicase también ahí, un usuario con acceso legítimo a las dos
+        cajas se quedaría sin poder cambiar de la primera a la segunda,
+        porque su propia comprobación de permisos se vería contaminada por
+        la cookie de la caja ya bloqueada."""
+        self.authenticate(self.pos_user.login, self.password)
+        self.url_open("/pos/web/caja-a")
+
+        response = self.url_open("/pos/web/caja-b", allow_redirects=False)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn("Acceso denegado", response.text)
+        self.assertEqual(response.headers["Location"], "/odoo/point-of-sale")
 
     def test_locked_user_cannot_open_a_different_allowed_pos_config(self):
         self.authenticate(self.pos_user.login, self.password)
@@ -264,3 +297,45 @@ class TestPosSlugAccessIntegration(PosConventionalTestCommon, HttpCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(self.pos_config.access_token, response.text)
         self.assertNotIn(self.other_config.access_token, response.text)
+
+    def test_visiting_another_slug_in_the_same_browser_overwrites_the_lock(self):
+        """Un mismo navegador puede pasar de una caja a otra sin más que
+        visitar el otro link: la cookie se sobreescribe con el último slug
+        usado, no queda mezcla ni bloqueo cruzado."""
+        self.authenticate(self.pos_user.login, self.password)
+        self.url_open("/pos/web/caja-a")
+        self.url_open("/pos/web/caja-b")
+
+        self.assertEqual(
+            self.opener.cookies.get(POS_LOCKED_SLUG_COOKIE), "caja-b"
+        )
+
+        # Ahora la caja A (la primera visitada) queda restringida...
+        response = self.url_open(f"/pos/ui/{self.pos_config.id}")
+        self.assertIn("Acceso restringido", response.text)
+
+        # ...y la B (la última visitada) es la que se abre.
+        response = self.url_open("/pos/web")
+        self.assertIn(self.other_config.access_token, response.text)
+        self.assertNotIn(self.pos_config.access_token, response.text)
+
+    def test_lock_survives_logout_and_login_in_the_same_browser(self):
+        """La cookie de bloqueo no depende de request.session: a diferencia
+        del mecanismo anterior, un logout/login del mismo usuario en el
+        mismo navegador no debe hacer que el bloqueo desaparezca."""
+        self.authenticate(self.pos_user.login, self.password)
+        self.url_open("/pos/web/caja-a")
+        locked_slug_cookie = self.opener.cookies.get(POS_LOCKED_SLUG_COOKIE)
+        self.assertEqual(locked_slug_cookie, "caja-a")
+
+        self.logout()
+        # self.authenticate() recrea el "opener" (simulando una sesión de
+        # login nueva), igual que haría un logout/login real respecto al
+        # session_id; a diferencia del session_id, la cookie de bloqueo la
+        # pone y la lee esta app, no el framework de sesión, así que en un
+        # navegador real seguiría presente. Lo simulamos reinyectándola.
+        self.authenticate(self.pos_user.login, self.password)
+        self.opener.cookies.set(POS_LOCKED_SLUG_COOKIE, locked_slug_cookie)
+
+        response = self.url_open(f"/pos/ui/{self.other_config.id}")
+        self.assertIn("Acceso restringido", response.text)

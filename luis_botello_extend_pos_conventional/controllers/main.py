@@ -5,6 +5,16 @@ from odoo.addons.pos_conventional_config_user_filter.controllers.main import (
     PosConfigUserFilterController,
 )
 
+# Cookie propia (independiente de la sesión de login) que fija, por
+# navegador/terminal físico, cuál es la última caja accedida por slug. Al ser
+# una cookie normal (no una clave dentro de request.session):
+# - no se comparte entre pestañas/dispositivos que usen sesiones de login
+#   distintas ni desaparece si la sesión de login se comparte/sincroniza;
+# - sobrevive a logout/login del mismo usuario en el mismo navegador;
+# - se sobreescribe sola cada vez que se visita un link /pos/web/<slug>,
+#   sea el mismo u otro, en ese mismo navegador.
+POS_LOCKED_SLUG_COOKIE = "pos_locked_slug"
+
 
 class PosSlugController(http.Controller):
     @staticmethod
@@ -13,7 +23,11 @@ class PosSlugController(http.Controller):
 
     @http.route("/pos/web/<string:slug>", type="http", auth="user")
     def pos_slug_access(self, slug, **kwargs):
-        # Validamos que exista una pos.config con este slug
+        # Validamos que exista una pos.config con este slug. El sudo() hace
+        # que pos.config._search NO aplique el filtro por la cookie de caja
+        # ya bloqueada (ver pos_config.py): si lo aplicase, la cookie de un
+        # slug anterior anularía la búsqueda del slug nuevo y jamás se
+        # podría cambiar de caja visitando otro link.
         pos_config = (
             request.env["pos.config"]
             .sudo()
@@ -34,25 +48,29 @@ class PosSlugController(http.Controller):
                 f"No tienes permiso para acceder al punto de venta '{pos_config.name}'",
             )
 
-        # Guardamos el slug en la sesión del usuario. Mientras dure la sesión
-        # de navegador, PosSlugAccessGuardController impide abrir cualquier
-        # otra caja distinta de la aquí fijada, y pos.config._search filtra
-        # el listado estándar de cajas para que solo aparezca esta.
-        request.session["active_pos_slug"] = slug
-
+        # Fijamos el slug en una cookie propia de este navegador/terminal.
+        # Mientras esa cookie exista, PosSlugAccessGuardController impide
+        # abrir cualquier otra caja distinta de la aquí fijada, y
+        # pos.config._search filtra el listado estándar de cajas para que
+        # solo aparezca esta. A diferencia de request.session, esta cookie
+        # no depende del login (sobrevive a logout/login) y no se comparte
+        # entre navegadores/dispositivos distintos.
         url = self._get_pos_conventional_url(pos_config)
-        return request.redirect(url)
+        response = request.redirect(url)
+        response.set_cookie(POS_LOCKED_SLUG_COOKIE, slug)
+        return response
 
 
 class PosSlugAccessGuardController(PosConfigUserFilterController):
     """Fuerza el uso exclusivo de la caja fijada por la URL de slug.
 
-    Mientras ``active_pos_slug`` esté presente en la sesión del usuario
-    (ver :class:`PosSlugController`), cualquier intento de abrir la interfaz
-    POS (``/pos/ui``, ``/pos/web``) de una caja distinta a la marcada por el
-    slug se deniega, y las peticiones sin caja explícita se resuelven
-    siempre contra la caja fijada, en vez de recurrir al comportamiento por
-    defecto de Odoo (abrir cualquier sesión ya activa del usuario).
+    Mientras la cookie :data:`POS_LOCKED_SLUG_COOKIE` esté presente en el
+    navegador (ver :class:`PosSlugController`), cualquier intento de abrir
+    la interfaz POS (``/pos/ui``, ``/pos/web``) de una caja distinta a la
+    marcada por el slug se deniega, y las peticiones sin caja explícita se
+    resuelven siempre contra la caja fijada, en vez de recurrir al
+    comportamiento por defecto de Odoo (abrir cualquier sesión ya activa del
+    usuario).
     """
 
     @http.route()
@@ -80,7 +98,7 @@ class PosSlugAccessGuardController(PosConfigUserFilterController):
 
     @staticmethod
     def _get_slug_locked_pos_config():
-        slug = request.session.get("active_pos_slug")
+        slug = request.cookies.get(POS_LOCKED_SLUG_COOKIE)
         if not slug:
             return None
         return (
