@@ -24,6 +24,28 @@ function getLocationId(value) {
     return value?.id || value?.[0] || (typeof value === "number" ? value : false);
 }
 
+/**
+ * `scrollIntoView` sólo garantiza alinear el elemento con el contenedor
+ * scrollable más cercano; si hay contenedores anidados (p.ej. `.o_content`,
+ * que es el que realmente scrollea en el layout de Odoo) puede quedarse a
+ * medias. Para asegurar que la línea nueva queda visible del todo, se busca
+ * el contenedor scrollable real y se fuerza al final (`scrollHeight`).
+ */
+function getScrollParent(el) {
+    let parent = el?.parentElement;
+    while (parent) {
+        const { overflowY } = getComputedStyle(parent);
+        if (
+            (overflowY === "auto" || overflowY === "scroll") &&
+            parent.scrollHeight > parent.clientHeight
+        ) {
+            return parent;
+        }
+        parent = parent.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+}
+
 patch(InventoryReportListDynamicRecordList.prototype, {
     async addNewRecord(...args) {
         if (
@@ -51,14 +73,44 @@ patch(InventoryReportListDynamicRecordList.prototype, {
 
 patch(ListRenderer.prototype, {
     focusCell(column, forward = true) {
-        if (isInventoryCount(this) && this._inventoryQuickFocusProduct) {
-            const productColumn = getColumn(this, "product_id");
-            if (productColumn) {
-                column = productColumn;
+        // Se marca sólo cuando el foco recae en Producto de una línea que
+        // acaba de crearse (`isNew`), para hacer scroll hasta el final de la
+        // lista y que la línea nueva quede visible.
+        let scrollNewRecordIntoView = false;
+        if (isInventoryCount(this)) {
+            const isNewRecord = Boolean(this.editedRecord?.isNew);
+            if (this._inventoryQuickFocusProduct) {
+                const productColumn = getColumn(this, "product_id");
+                if (productColumn) {
+                    column = productColumn;
+                }
+                this._inventoryQuickFocusProduct = false;
+                scrollNewRecordIntoView = isNewRecord;
+            } else if (
+                // Foco por defecto tras crear una línea nueva (sin click del
+                // usuario de por medio: `cellToFocus` no está fijado). Como la
+                // ubicación ya se autocompleta en `addNewRecord`, saltamos
+                // directamente a Producto en vez de dejar el foco en Ubicación
+                // (1ª columna de la vista).
+                !this.cellToFocus &&
+                this.editedRecord &&
+                !this.editedRecord.data.product_id &&
+                column === this.columns[0]
+            ) {
+                const productColumn = getColumn(this, "product_id");
+                if (productColumn && !this.isCellReadonly(productColumn, this.editedRecord)) {
+                    column = productColumn;
+                    scrollNewRecordIntoView = isNewRecord;
+                }
             }
-            this._inventoryQuickFocusProduct = false;
         }
-        return super.focusCell(column, forward);
+        super.focusCell(column, forward);
+        if (scrollNewRecordIntoView) {
+            const scrollParent = getScrollParent(document.activeElement);
+            if (scrollParent) {
+                scrollParent.scrollTop = scrollParent.scrollHeight;
+            }
+        }
     },
 
     onCellKeydownEditMode(hotkey, cell, group, record) {
