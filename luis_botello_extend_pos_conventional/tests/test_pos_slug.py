@@ -245,6 +245,151 @@ class TestPosSlugAccessIntegration(PosConventionalTestCommon, HttpCase):
 
         self.assertEqual([r["id"] for r in result], [self.pos_config.id])
 
+    def test_slug_forces_pos_session_search_to_a_single_result(self):
+        """La cookie de bloqueo también debe ocultar las sesiones de otras
+        cajas permitidas al usuario, no solo la lista de pos.config."""
+        session_a = (
+            self.env["pos.session"]
+            .with_context(skip_auto_open=True)
+            .create({"config_id": self.pos_config.id, "user_id": self.pos_user.id})
+        )
+        session_b = (
+            self.env["pos.session"]
+            .with_context(skip_auto_open=True)
+            .create({"config_id": self.other_config.id, "user_id": self.pos_user.id})
+        )
+
+        self.authenticate(self.pos_user.login, self.password)
+        self.url_open("/pos/web/caja-a")
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "model": "pos.session",
+                "method": "search_read",
+                "args": [
+                    [("id", "in", [session_a.id, session_b.id])],
+                    ["id"],
+                ],
+                "kwargs": {},
+            },
+        }
+        response = self.url_open("/web/dataset/call_kw", json=payload)
+        result = response.json()["result"]
+
+        self.assertEqual([r["id"] for r in result], [session_a.id])
+
+    def test_slug_forces_pos_order_search_to_a_single_result(self):
+        """La cookie de bloqueo también debe ocultar los pedidos de otras
+        cajas permitidas al usuario, no solo la lista de pos.config."""
+        session_a = (
+            self.env["pos.session"]
+            .with_context(skip_auto_open=True)
+            .create({"config_id": self.pos_config.id, "user_id": self.pos_user.id})
+        )
+        session_b = (
+            self.env["pos.session"]
+            .with_context(skip_auto_open=True)
+            .create({"config_id": self.other_config.id, "user_id": self.pos_user.id})
+        )
+        (session_a | session_b).write({"state": "opened"})
+
+        order_a = (
+            self.env["pos.order"]
+            .with_context(skip_completeness_check=True)
+            .create({"session_id": session_a.id, "company_id": self.env.company.id})
+        )
+        order_b = (
+            self.env["pos.order"]
+            .with_context(skip_completeness_check=True)
+            .create({"session_id": session_b.id, "company_id": self.env.company.id})
+        )
+
+        self.authenticate(self.pos_user.login, self.password)
+        self.url_open("/pos/web/caja-a")
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "model": "pos.order",
+                "method": "search_read",
+                "args": [
+                    [("id", "in", [order_a.id, order_b.id])],
+                    ["id"],
+                ],
+                "kwargs": {},
+            },
+        }
+        response = self.url_open("/web/dataset/call_kw", json=payload)
+        result = response.json()["result"]
+
+        self.assertEqual([r["id"] for r in result], [order_a.id])
+
+    def test_slug_forces_pos_payment_search_to_a_single_result(self):
+        """La cookie de bloqueo también debe ocultar los pagos de otras
+        cajas permitidas al usuario, no solo la lista de pos.config."""
+        session_a = (
+            self.env["pos.session"]
+            .with_context(skip_auto_open=True)
+            .create({"config_id": self.pos_config.id, "user_id": self.pos_user.id})
+        )
+        session_b = (
+            self.env["pos.session"]
+            .with_context(skip_auto_open=True)
+            .create({"config_id": self.other_config.id, "user_id": self.pos_user.id})
+        )
+        (session_a | session_b).write({"state": "opened"})
+
+        order_a = (
+            self.env["pos.order"]
+            .with_context(skip_completeness_check=True)
+            .create({"session_id": session_a.id, "company_id": self.env.company.id})
+        )
+        order_b = (
+            self.env["pos.order"]
+            .with_context(skip_completeness_check=True)
+            .create({"session_id": session_b.id, "company_id": self.env.company.id})
+        )
+
+        payment_method_a = session_a.config_id.payment_method_ids[:1]
+        payment_a = self.env["pos.payment"].create(
+            {
+                "pos_order_id": order_a.id,
+                "amount": 10.0,
+                "payment_method_id": payment_method_a.id,
+            }
+        )
+        payment_b = self.env["pos.payment"].create(
+            {
+                "pos_order_id": order_b.id,
+                "amount": 10.0,
+                "payment_method_id": self.other_pm.id,
+            }
+        )
+
+        self.authenticate(self.pos_user.login, self.password)
+        self.url_open("/pos/web/caja-a")
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "model": "pos.payment",
+                "method": "search_read",
+                "args": [
+                    [("id", "in", [payment_a.id, payment_b.id])],
+                    ["id"],
+                ],
+                "kwargs": {},
+            },
+        }
+        response = self.url_open("/web/dataset/call_kw", json=payload)
+        result = response.json()["result"]
+
+        self.assertEqual([r["id"] for r in result], [payment_a.id])
+
     def test_switching_to_another_allowed_slug_is_not_blocked_by_the_old_lock(self):
         """Regresión: pos.config._search se invoca también, internamente,
         dentro de comprobaciones de acceso ajenas (p. ej. leer

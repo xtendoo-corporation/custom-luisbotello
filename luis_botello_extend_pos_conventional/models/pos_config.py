@@ -1,5 +1,19 @@
 from odoo import api, fields, models
 
+POS_LOCKED_SLUG_COOKIE = "pos_locked_slug"
+
+
+def get_pos_locked_slug():
+    """Slug de la caja bloqueada por cookie en la petición web actual, o
+    None si no hay petición web o no hay cookie. Compartido por los
+    ``_search`` de pos.config, pos.session y pos.order: los tres deben
+    acotarse al mismo slug mientras el navegador tenga la cookie."""
+    from odoo.http import request
+
+    if request and hasattr(request, "cookies"):
+        return request.cookies.get(POS_LOCKED_SLUG_COOKIE)
+    return None
+
 
 class PosConfig(models.Model):
     _inherit = "pos.config"
@@ -34,8 +48,6 @@ class PosConfig(models.Model):
 
     @api.model
     def _search(self, domain, offset=0, limit=None, order=None, **kwargs):
-        from odoo.http import request
-
         # Si estamos en una petición web y el navegador trae la cookie de
         # caja bloqueada (ver PosSlugController/POS_LOCKED_SLUG_COOKIE en
         # luis_botello_extend_pos_conventional/controllers/main.py), la
@@ -57,12 +69,8 @@ class PosConfig(models.Model):
         # filtrásemos también ahí, la cookie de una caja ya bloqueada podría
         # hacer que un usuario con acceso legítimo a otra caja distinta
         # apareciera como "sin permiso" para ella.
-        if (
-            not self.env.su
-            and request
-            and hasattr(request, "cookies")
-        ):
-            slug = request.cookies.get("pos_locked_slug")
+        if not self.env.su:
+            slug = get_pos_locked_slug()
             if slug:
                 # Añadimos el filtro por slug al dominio de búsqueda
                 domain = [("access_slug", "=", slug)] + list(domain)
