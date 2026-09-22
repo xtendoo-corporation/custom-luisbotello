@@ -1,6 +1,8 @@
 /** @odoo-module **/
 
+import { useExternalListener } from "@odoo/owl";
 import { patch } from "@web/core/utils/patch";
+import { getActiveHotkey } from "@web/core/hotkeys/hotkey_service";
 import { ListRenderer } from "@web/views/list/list_renderer";
 import {
     InventoryReportListDynamicRecordList,
@@ -18,6 +20,18 @@ function isInventoryCount(renderer) {
 
 function getColumn(renderer, name) {
     return renderer.columns.find((column) => column.type === "field" && column.name === name);
+}
+
+/**
+ * Campo al que se debe saltar el foco tras completar Producto o Lote: Lote
+ * si el producto recién seleccionado se rastrea por lote/serie, si no
+ * Cantidad. Compartido entre el salto estándar (TAB/ENTER) y el salto
+ * forzado tras un escaneo (ver `scheduleInventoryScanFocusRedirect`).
+ */
+function getNextFieldAfterProductOrLot(fieldName, record) {
+    return fieldName === "product_id" && ["lot", "serial"].includes(record.data.tracking)
+        ? "lot_id"
+        : "inventory_quantity";
 }
 
 function getLocationId(value) {
@@ -72,6 +86,86 @@ patch(InventoryReportListDynamicRecordList.prototype, {
 });
 
 patch(ListRenderer.prototype, {
+    setup() {
+        super.setup(...arguments);
+        // Token para invalidar reintentos de saltos de foco pendientes de
+        // una línea (ver `scheduleInventoryScanFocusRedirect`) si el usuario
+        // ya ha pasado a otra línea/celda antes de que se complete el
+        // escaneo en curso.
+        this._inventoryScanRedirectToken = 0;
+        useExternalListener(document, "keydown", this.onInventoryScanKeydownCapture, true);
+    },
+
+    /**
+     * Al escanear un producto (o un lote) con un lector de código de
+     * barras, éste actúa como un teclado que escribe el código y termina
+     * con ENTER. Cuando ese texto coincide con una sugerencia del
+     * desplegable de autocompletado del campo Producto/Lote, el propio
+     * widget `AutoComplete` la selecciona y detiene la propagación de ese
+     * ENTER (`stopPropagation`) antes de que llegue a `onCellKeydownEditMode`
+     * (más abajo), que es quien normalmente mueve el foco a Cantidad. El
+     * resultado percibido es que, tras escanear, el foco se queda en
+     * Producto/Lote en lugar de saltar a Cantidad.
+     *
+     * Para solucionarlo sin tocar el resto de flujos (clic de ratón, TAB, o
+     * ENTER sin ninguna sugerencia activa, que ya funcionan tal cual), se
+     * escucha el ENTER en fase de captura -antes de que `AutoComplete`
+     * pueda detener su propagación- y se programa un salto de foco que sólo
+     * se ejecuta si el salto estándar no se ha producido ya.
+     */
+    onInventoryScanKeydownCapture(ev) {
+        if (!isInventoryCount(this) || !this.editedRecord) {
+            return;
+        }
+        if (getActiveHotkey(ev) !== "enter") {
+            return;
+        }
+        const cell = ev.target.closest("td[name]");
+        if (!cell) {
+            return;
+        }
+        const fieldName = cell.getAttribute("name");
+        if (fieldName !== "product_id" && fieldName !== "lot_id") {
+            return;
+        }
+        this.scheduleInventoryScanFocusRedirect(this.editedRecord, fieldName, cell);
+    },
+
+    scheduleInventoryScanFocusRedirect(record, fieldName, cell) {
+        const recordId = record.id;
+        const token = ++this._inventoryScanRedirectToken;
+        const maxAttempts = 20;
+        const retryDelayMs = 50;
+        const tryRedirect = (attempt) => {
+            if (
+                token !== this._inventoryScanRedirectToken ||
+                this.editedRecord?.id !== recordId
+            ) {
+                return;
+            }
+            if (document.activeElement && !cell.contains(document.activeElement)) {
+                // El flujo estándar (TAB, o ENTER sin sugerencia activa) ya
+                // ha movido el foco: no hay nada más que hacer.
+                return;
+            }
+            if (!this.editedRecord.data[fieldName]) {
+                // El valor aún no se ha fijado (búsqueda/`onchange` en
+                // curso, o no hubo coincidencia): seguimos esperando un
+                // tiempo acotado antes de desistir en silencio.
+                if (attempt < maxAttempts) {
+                    setTimeout(() => tryRedirect(attempt + 1), retryDelayMs);
+                }
+                return;
+            }
+            const nextField = getNextFieldAfterProductOrLot(fieldName, this.editedRecord);
+            const column = getColumn(this, nextField);
+            if (column && !this.isCellReadonly(column, this.editedRecord)) {
+                this.focusCell(column);
+            }
+        };
+        setTimeout(() => tryRedirect(0), 0);
+    },
+
     focusCell(column, forward = true) {
         // Se marca sólo cuando el foco recae en Producto de una línea que
         // acaba de crearse (`isNew`), para hacer scroll hasta el final de la
@@ -123,11 +217,7 @@ patch(ListRenderer.prototype, {
             ["tab", "enter"].includes(hotkey) &&
             (fieldName === "product_id" || fieldName === "lot_id")
         ) {
-            const nextField =
-                fieldName === "product_id" &&
-                ["lot", "serial"].includes(record.data.tracking)
-                    ? "lot_id"
-                    : "inventory_quantity";
+            const nextField = getNextFieldAfterProductOrLot(fieldName, record);
             const column = getColumn(this, nextField);
             if (column && !this.isCellReadonly(column, record)) {
                 this.focusCell(column);

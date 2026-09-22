@@ -133,6 +133,17 @@ seleccionada, el foco comienza en `product_id`, y `TAB` salta a `inventory_quant
 guardado estándar y prepara la siguiente línea sin modificar la navegación de otras
 listas de Odoo.
 
+Este salto de foco también se produce al **escanear** el producto (o el lote) con un
+lector de código de barras: el lector emula un teclado que escribe el código y termina
+con `ENTER`, y ese `ENTER` queda normalmente "atrapado" por el propio desplegable de
+autocompletado del campo (que lo usa para seleccionar la sugerencia resaltada) antes de
+llegar a la lógica de navegación de la lista. El módulo detecta ese `ENTER` en fase de
+captura y, una vez que el valor del campo queda fijado, fuerza el salto a
+`inventory_quantity` (o `lot_id`) igual que si se hubiera pulsado `TAB`. Si el `ENTER`
+no proviene de una selección de autocompletado (por ejemplo, campo vacío, o no hay
+ninguna sugerencia activa), el comportamiento estándar de la lista se mantiene
+intacto, igual que la selección con el ratón, que tampoco se ve afectada.
+
 ---
 
 ## Pruebas existentes
