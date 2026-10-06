@@ -1,0 +1,15 @@
+# Translation of Odoo Server.
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. module: luis_botello_pos_report_supplier
+#: model:ir.model.fields,field_description:luis_botello_pos_report_supplier.field_report_pos_order__supplier_id
+#: model_terms:ir.ui.view,arch_db:luis_botello_pos_report_supplier.view_report_pos_order_search_supplier
+msgid "Vendor"
+msgstr "Proveedor"
