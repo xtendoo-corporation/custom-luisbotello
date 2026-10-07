@@ -1,2 +1,3 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_pos_payment_redsys_reconcile_manager,pos.payment.redsys.reconcile manager,model_pos_payment_redsys_reconcile,point_of_sale.group_pos_manager,1,1,1,1
+access_pos_order_redsys_cancel_manager,pos.order.redsys.cancel manager,model_pos_order_redsys_cancel,point_of_sale.group_pos_manager,1,1,1,1

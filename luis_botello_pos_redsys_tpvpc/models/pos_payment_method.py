@@ -6,18 +6,14 @@ class PosPaymentMethod(models.Model):
     _inherit = "pos.payment.method"
 
     def _get_payment_terminal_selection(self):
-        return super()._get_payment_terminal_selection() + [
-            ("redsys_tpvpc", "Redsys TPV-PC")
-        ]
+        return super()._get_payment_terminal_selection() + [("redsys_tpvpc", "Redsys TPV-PC")]
 
     redsys_merchant_code = fields.Char(
         string="Redsys merchant code (FUC)",
         copy=False,
         help="Código de comercio (FUC), 9 dígitos.",
     )
-    redsys_terminal_number = fields.Char(
-        string="Redsys terminal", default="1", copy=False
-    )
+    redsys_terminal_number = fields.Char(string="Redsys terminal", default="1", copy=False)
     # SECRETO. Nunca se incluye en _load_pos_data_fields (ver DECISIONS.md D7).
     redsys_signature_key = fields.Char(
         string="Redsys signature key",
@@ -27,9 +23,7 @@ class PosPaymentMethod(models.Model):
         "POS; el POS la recibe mediante redsys_get_signature_key (sudo), solo "
         "para el método de la caja con sesión abierta del usuario.",
     )
-    redsys_com_port = fields.Char(
-        string="Redsys COM port", default="COM9:,19200,N,8,1"
-    )
+    redsys_com_port = fields.Char(string="Redsys COM port", default="COM9:,19200,N,8,1")
     redsys_protocol_version = fields.Selection(
         [("6.1", "6.1"), ("8.1", "8.1")],
         string="Redsys protocol version",
@@ -80,24 +74,15 @@ class PosPaymentMethod(models.Model):
         session = config.current_session_id
         if not session or session.state == "closed":
             raise AccessError(_("The point of sale has no open session."))
-        if session.user_id != user and not user.has_group(
-            "point_of_sale.group_pos_manager"
-        ):
-            raise AccessError(
-                _("This point of sale session was not opened by you.")
-            )
-        methods = config.payment_method_ids.filtered(
-            lambda m: m.use_payment_terminal == "redsys_tpvpc"
-        )
+        if session.user_id != user and not user.has_group("point_of_sale.group_pos_manager"):
+            raise AccessError(_("This point of sale session was not opened by you."))
+        methods = config.payment_method_ids.filtered(lambda m: m.use_payment_terminal == "redsys_tpvpc")
         return {m.id: m.sudo().redsys_signature_key or "" for m in methods}
 
     @api.constrains("redsys_merchant_code", "redsys_terminal_number")
     def _check_redsys_merchant_terminal(self):
         for method in self:
-            if (
-                method.use_payment_terminal != "redsys_tpvpc"
-                or not method.redsys_merchant_code
-            ):
+            if method.use_payment_terminal != "redsys_tpvpc" or not method.redsys_merchant_code:
                 continue
             duplicate = (
                 self.sudo()
@@ -119,8 +104,7 @@ class PosPaymentMethod(models.Model):
             if duplicate:
                 raise ValidationError(
                     _(
-                        "Merchant %(merchant)s / terminal %(terminal)s is already "
-                        "used by payment method %(method)s.",
+                        "Merchant %(merchant)s / terminal %(terminal)s is already used by payment method %(method)s.",
                         merchant=method.redsys_merchant_code,
                         terminal=method.redsys_terminal_number,
                         method=duplicate.name,
@@ -139,17 +123,14 @@ class PosPaymentMethod(models.Model):
         return super().write(vals)
 
     def _redsys_check_simulation_right(self):
-        if not self.env.su and not self.env.user.has_group(
-            "point_of_sale.group_pos_manager"
-        ):
-            raise AccessError(
-                _("Only Point of Sale administrators can change the simulation mode.")
-            )
+        if not self.env.su and not self.env.user.has_group("point_of_sale.group_pos_manager"):
+            raise AccessError(_("Only Point of Sale administrators can change the simulation mode."))
 
     @api.onchange("use_payment_terminal")
     def _onchange_use_payment_terminal(self):
-        super()._onchange_use_payment_terminal()
+        res = super()._onchange_use_payment_terminal()
         if self.use_payment_terminal != "redsys_tpvpc":
             self.redsys_merchant_code = False
             self.redsys_signature_key = False
             self.redsys_simulation = False
+        return res

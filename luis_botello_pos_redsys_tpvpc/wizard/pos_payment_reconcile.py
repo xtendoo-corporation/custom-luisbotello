@@ -19,7 +19,6 @@ class PosPaymentRedsysReconcile(models.TransientModel):
         required=True,
     )
     note = fields.Text(
-        string="Note",
         required=True,
         help="Evidence used (Redsys portal operation, date, who checked it).",
     )
@@ -45,13 +44,12 @@ class PosPaymentRedsysReconcile(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
-        if (
-            "payment_ids" in fields_list
-            and self.env.context.get("active_model") == "pos.payment"
-        ):
-            payments = self.env["pos.payment"].browse(
-                self.env.context.get("active_ids", [])
-            ).filtered(lambda p: p.redsys_state == "unknown")
+        if "payment_ids" in fields_list and self.env.context.get("active_model") == "pos.payment":
+            payments = (
+                self.env["pos.payment"]
+                .browse(self.env.context.get("active_ids", []))
+                .filtered(lambda p: p.redsys_state == "unknown")
+            )
             res["payment_ids"] = [(6, 0, payments.ids)]
         return res
 

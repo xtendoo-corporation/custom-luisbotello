@@ -5,13 +5,14 @@ comportamiento ACTUAL (inseguro o incorrecto). Cuando se corrija el hallazgo el 
 propósito: entonces hay que invertir la aserción (el docstring indica el comportamiento deseado).
 El resto son comprobaciones de seguridad que hoy se cumplen y deben seguir cumpliéndose.
 """
+
 import json
-import re
 from pathlib import Path
 
 from odoo import Command
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
+
 from odoo.addons.point_of_sale.tests.common import TestPoSCommon
 
 from .redsys_xml import redsys_query_op_xml, redsys_xml
@@ -31,10 +32,18 @@ class TestRedsysQA(TestPoSCommon):
         group_user = cls.env.ref("point_of_sale.group_pos_user")
         group_manager = cls.env.ref("point_of_sale.group_pos_manager")
         cls.cashier = cls.env["res.users"].create(
-            {"name": "QA cashier", "login": "qa_cashier", "group_ids": [(6, 0, [group_user.id])]}
+            {
+                "name": "QA cashier",
+                "login": "qa_cashier",
+                "group_ids": [(6, 0, [group_user.id])],
+            }
         )
         cls.manager = cls.env["res.users"].create(
-            {"name": "QA manager", "login": "qa_manager", "group_ids": [(6, 0, [group_manager.id])]}
+            {
+                "name": "QA manager",
+                "login": "qa_manager",
+                "group_ids": [(6, 0, [group_manager.id])],
+            }
         )
 
     @classmethod
@@ -123,13 +132,14 @@ class TestRedsysQA(TestPoSCommon):
         keys = self.env["pos.payment.method"].with_user(self.cashier).redsys_get_signature_key(self.config.id)
         self.assertEqual(keys[method.id], "")
         self.assertEqual(
-            self.env["pos.payment.method"].with_user(self.cashier).redsys_get_signature_key(999999), {}
+            self.env["pos.payment.method"].with_user(self.cashier).redsys_get_signature_key(999999),
+            {},
         )
 
     def test_qa_unique_merchant_terminal_includes_archived(self):
         dup = self._method("9", merchant="333333333")
         dup.active = False
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self._method("9", merchant="333333333")
 
     # ------------------------------------------------------- hallazgos abiertos (documentados)
@@ -138,12 +148,8 @@ class TestRedsysQA(TestPoSCommon):
         """QA-16: el campo solo lo lee group_pos_manager; el RPC (sudo) sigue entregándola."""
         Method = self.env["pos.payment.method"]
         with self.assertRaises(AccessError):
-            Method.with_user(self.cashier).search_read(
-                [("id", "=", self.method.id)], ["redsys_signature_key"]
-            )
-        rows = Method.with_user(self.manager).search_read(
-            [("id", "=", self.method.id)], ["redsys_signature_key"]
-        )
+            Method.with_user(self.cashier).search_read([("id", "=", self.method.id)], ["redsys_signature_key"])
+        rows = Method.with_user(self.manager).search_read([("id", "=", self.method.id)], ["redsys_signature_key"])
         self.assertEqual(rows[0]["redsys_signature_key"], KEY)
         self.open_new_session()
         self.pos_session.user_id = self.cashier
@@ -153,9 +159,7 @@ class TestRedsysQA(TestPoSCommon):
     def test_qa_17_key_rpc_only_own_open_session(self):
         """QA-17: sin sesión abierta del usuario en esa config no se entrega la clave."""
         other_method = self._method("2", merchant="444444444", key="OTHER-CASH-DESK-KEY")
-        other = self.env["pos.config"].create(
-            {"name": "Otra caja", "payment_method_ids": [(4, other_method.id)]}
-        )
+        other = self.env["pos.config"].create({"name": "Otra caja", "payment_method_ids": [(4, other_method.id)]})
         Method = self.env["pos.payment.method"].with_user(self.cashier)
         with self.assertRaises(AccessError):  # config sin sesión abierta
             Method.redsys_get_signature_key(other.id)
@@ -183,15 +187,17 @@ class TestRedsysQA(TestPoSCommon):
         }
         payment.pos_order_id.write({"payment_ids": [Command.update(payment.id, vals)]})
         self.assertEqual(payment.card_brand, "MASTERCARD")
-        for key, bad in (("amount", 5.0), ("transaction_id", "999"), ("redsys_state", False)):
+        for key, bad in (
+            ("amount", 5.0),
+            ("transaction_id", "999"),
+            ("redsys_state", False),
+        ):
             with self.assertRaises(UserError, msg=key):
                 payment.write({**vals, key: bad})
 
     def test_qa_19_unknown_can_be_completed_from_empty_fields(self):
         """Una línea unknown (sin pedido/RTS/XML) se completa al resolverla; lo ya escrito no cambia."""
-        payment = self._payment(
-            "unknown", transaction_id=False, redsys_rts=False, redsys_xml=False
-        )
+        payment = self._payment("unknown", transaction_id=False, redsys_rts=False, redsys_xml=False)
         payment.write(
             {
                 "redsys_state": "authorized",
@@ -208,7 +214,9 @@ class TestRedsysQA(TestPoSCommon):
         diálogo (reintento). `not_charged` queda para la conciliación auditada del manager
         (nota obligatoria): un cajero no puede escribirlo. Ver DECISIONS J11/QA-18."""
         payment = self._payment("unknown")
-        payment.write({"redsys_state": False})
+        with self.assertRaises(UserError):  # R3-01: sin estado y dada por buena = tarjeta sin cobro
+            payment.write({"redsys_state": False})
+        payment.write({"redsys_state": False, "payment_status": "retry"})  # lo que envia el POS al liberar
         payment.unlink()
         self.assertFalse(payment.exists())
 
@@ -283,7 +291,11 @@ class TestRedsysQA(TestPoSCommon):
             with self.subTest(name), self.assertRaises(ValidationError):
                 self._payment("authorized", amount=10.0, xml=xml)
         # minúsculas/mixto también válidos
-        self._payment("authorized", amount=10.0, xml=redsys_query_op_xml(10.0, resultado="autorizada"))
+        self._payment(
+            "authorized",
+            amount=10.0,
+            xml=redsys_query_op_xml(10.0, resultado="autorizada"),
+        )
 
     def test_qa_10_server_rejects_mock_signature_outside_simulation(self):
         """QA-10 (servidor): firma MOCK solo con redsys_simulation; sirve para pago y consulta."""

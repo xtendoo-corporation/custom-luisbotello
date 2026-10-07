@@ -1,15 +1,16 @@
 """QA independiente, tercera ronda (backend). Ver docs/qa_report3.md.
 
-Convencion: `test_qa3_NN_*` afirman el comportamiento CORRECTO ya conseguido (regresion). Los
-`test_qa3_known_issue_*` AFIRMAN EL COMPORTAMIENTO ACTUAL DEFECTUOSO de un hallazgo abierto: fallaran a proposito
-cuando se corrija (entonces invertir la asercion y renombrar a `test_qa3_NN_*`).
+Convencion: `test_qa3_NN_*` afirman el comportamiento CORRECTO (los antiguos `known_issue` de la ronda 3 se
+convirtieron en la ronda 4).
 """
+
 from uuid import uuid4
 
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
 
 from . import test_redsys_qa2 as qa2
+from .redsys_xml import redsys_xml
 
 INDEXES = (
     "pos_payment_redsys_transaction_id_authorized_uniq",
@@ -51,11 +52,12 @@ class TestRedsysQA3(qa2.TestRedsysQA2):
         (se omite el indice) y, corregidos los datos, `init()` lo crea. No deja la transaccion abortada."""
         order1, _ = self._sync([self._line("authorized")], draft=True)
         other = self._line(
-            "authorized", uuid=str(uuid4()), transaction_id="999999999999", redsys_rts="RTS-OTHER-0001",
+            "authorized",
+            uuid=str(uuid4()),
+            transaction_id="999999999999",
+            redsys_rts="RTS-OTHER-0001",
             redsys_reference="ODOO-OTHER001",
         )
-        from .redsys_xml import redsys_xml
-
         other["redsys_xml"] = redsys_xml(10.0, pedido="999999999999", rts="RTS-OTHER-0001", factura="ODOO-OTHER001")
         order2, _ = self._sync([other], draft=True, order_uuid=str(uuid4()))
         for name in INDEXES:
@@ -83,79 +85,167 @@ class TestRedsysQA3(qa2.TestRedsysQA2):
         self.assertTrue(order.payment_ids)
         self.assertTrue(self._index_exists(INDEXES[0]))
 
-    # ------------------------------------------------------------------ HALLAZGOS ABIERTOS (caracterizacion)
+    # ------------------------------------------------------------------ ronda 4: hallazgos corregidos
 
-    def test_qa3_known_issue_05_cashier_can_cancel_order_with_authorized_payment_by_write(self):
-        """R3-02 (ALTO). `action_pos_order_cancel` esta guardado, pero `pos.order.write({'state': 'cancel'})` NO:
-        lo usan `pos_conventional_session_management` (`_cancel_empty_draft_orders` y el wizard de cierre,
-        sobre pedidos sin lineas de producto) y cualquier cajero por RPC. El cobro `authorized` queda en un
-        pedido `cancel` (fuera de la contabilidad de la sesion) y la sesion puede cerrarse."""
-        order, _data = self._sync([self._line("authorized")], draft=True)
-        with self.assertRaises(UserError):
-            order.with_user(self.cashier).action_pos_order_cancel()
-        order.with_user(self.cashier).write({"state": "cancel"})  # NO deberia poder
-        self.assertEqual(order.state, "cancel")
-        self.assertEqual(order.payment_ids.redsys_state, "authorized")
+    def test_qa3_05_write_cancel_is_blocked_for_protected_payments(self):
+        """R3-02. La guarda vive en `pos.order.write` (no solo en `action_pos_order_cancel`): cubre
+        `write({'state': 'cancel'})` de cualquier cajero y de `pos_conventional_session_management`."""
+        for state in ("authorized", "unknown"):
+            order, _data = self._sync([self._line(state, uuid=str(uuid4()))], draft=True)
+            with self.assertRaises(UserError):
+                order.with_user(self.cashier).action_pos_order_cancel()
+            with self.assertRaises(UserError):
+                order.with_user(self.cashier).write({"state": "cancel"})
+            with self.assertRaises(UserError):
+                order.sudo().write({"state": "cancel"})  # sudo solo no activa el bypass
+            self.assertEqual(order.state, "draft")
+        empty, _data = self._sync([], draft=True)
+        empty.with_user(self.cashier).write({"state": "cancel"})  # sin cobros Redsys: sigue permitido
+        self.assertEqual(empty.state, "cancel")
 
-    def test_qa3_known_issue_06_redsys_method_payment_without_redsys_state_is_accepted(self):
-        """R3-01 (ALTO). Los flujos backend de `pos_conventional_payment_wizard` (`add_payment_from_ui`,
-        wizard `pos.make.payment.wizard`, `get_payment_popup_data` lista TODOS los metodos de la caja)
-        crean `pos.payment` con el metodo Redsys sin pasar por el datafono: un pago con tarjeta registrado
-        sin cargo. El servidor no exige estado Redsys a un pago de un metodo `redsys_tpvpc`."""
+    def test_qa3_06_redsys_method_payment_without_terminal_flow_is_rejected(self):
+        """R3-01. Un `pos.payment` de un metodo Redsys sin `redsys_state` y dado por bueno (el popup/wizard
+        de `pos_conventional_payment_wizard`) se rechaza; las lineas en curso/denegadas del POS siguen
+        sincronizando; un metodo en simulacion queda fuera; la sync normal con estado Redsys funciona."""
         order, _data = self._sync([], draft=True)
-        order.add_payment(
-            {"pos_order_id": order.id, "amount": 10.0, "payment_method_id": self.method.id}
+        with self.assertRaises(UserError):
+            order.add_payment(
+                {
+                    "pos_order_id": order.id,
+                    "amount": 10.0,
+                    "payment_method_id": self.method.id,
+                }
+            )
+        with self.assertRaises(UserError):
+            self.env["pos.payment"].create(
+                {
+                    "pos_order_id": order.id,
+                    "amount": 10.0,
+                    "payment_method_id": self.method.id,
+                    "payment_status": "done",
+                }
+            )
+        self.assertFalse(order.payment_ids)
+        # linea del POS en curso o denegada: se sincroniza como borrador
+        for status in ("waitingCard", "retry"):
+            line = self._line(
+                "authorized",
+                uuid=str(uuid4()),
+                payment_status=status,
+                redsys_state=False,
+                transaction_id=False,
+                redsys_rts=False,
+                redsys_xml=False,
+            )
+            o, _d = self._sync([line], draft=True, order_uuid=str(uuid4()))
+            self.assertEqual(o.payment_ids.payment_status, status)
+        # cambiar el metodo o el estado de una linea ya existente tampoco abre la puerta
+        cash_line = self.env["pos.payment"].create(
+            {
+                "pos_order_id": order.id,
+                "amount": 1.0,
+                "payment_method_id": self.cash_pm1.id,
+            }
         )
-        self.assertEqual(order.payment_ids.payment_method_id, self.method)
-        self.assertFalse(order.payment_ids.redsys_state)
-        self.assertEqual(order.amount_paid, 10.0)
+        with self.assertRaises(UserError):
+            cash_line.write({"payment_method_id": self.method.id})
+        # sync normal (authorized con XML valido) y metodo en simulacion
+        ok, _d = self._sync(
+            [
+                self._line(
+                    "authorized",
+                    uuid=str(uuid4()),
+                    transaction_id="777777777777",
+                    redsys_rts="RTS-OK-0000001",
+                    redsys_xml=redsys_xml(10.0, pedido="777777777777", rts="RTS-OK-0000001"),
+                )
+            ],
+            order_uuid=str(uuid4()),
+        )
+        self.assertEqual(ok.payment_ids.redsys_state, "authorized")
+        sim_method = self.method.copy(default={"name": "QA3 Redsys sim", "redsys_simulation": True})
+        # (`new`: el metodo de simulacion no esta en la config de la sesion abierta)
+        self.env["pos.payment"].new(
+            {
+                "pos_order_id": order.id,
+                "amount": 2.0,
+                "payment_method_id": sim_method.id,
+            }
+        )._redsys_check_terminal_flow()
+        with self.assertRaises(UserError):
+            self.env["pos.payment"].new(
+                {
+                    "pos_order_id": order.id,
+                    "amount": 2.0,
+                    "payment_method_id": self.method.id,
+                }
+            )._redsys_check_terminal_flow()
 
-    def test_qa3_known_issue_07_public_session_validate_bypasses_unknown_guard(self):
-        """R3-03 (BAJO). El bloqueo esta en `_cannot_close_session` y `action_pos_session_closing_control`;
-        `action_pos_session_validate`/`action_pos_session_close` son metodos publicos del core que van directo a
-        `_validate_session`: por RPC se puede cerrar con lineas `unknown`. No hay boton de UI que lo haga."""
-        order, _data = self._sync([self._line("unknown")])
+    def test_qa3_07_public_session_validate_is_blocked_with_unknown_payments(self):
+        """R3-03. `action_pos_session_validate`/`action_pos_session_close` (RPC publicos) no cierran con `unknown`."""
+        self._sync([self._line("unknown")])
         session = self.pos_session
         with self.assertRaises(UserError):
             session.action_pos_session_closing_control()
         session.write({"state": "closing_control"})
-        session.action_pos_session_validate()
-        self.assertEqual(session.state, "closed")
-        self.assertEqual(order.payment_ids.redsys_state, "unknown")
+        with self.assertRaises(UserError):
+            session.action_pos_session_validate()
+        self.assertEqual(session.state, "closing_control")
 
-    def test_qa3_known_issue_08_no_manager_exit_for_draft_order_with_authorized_card_line(self):
-        """R3-04 (MEDIO). Pedido borrador con una linea `authorized` abandonada (el cliente se fue sin pagar
-        el resto): ni el cajero ni el manager pueden cancelarlo/borrarlo/quitar la linea; no hay accion de
-        manager (el bypass `redsys_force_unlink` no se usa en ninguna vista/boton). La sesion no cierra
-        mientras el pedido siga en borrador. La unica salida es completar el pedido en el POS."""
+    def test_qa3_08_manager_can_cancel_abandoned_draft_with_authorized_line_audited(
+        self,
+    ):
+        """R3-04. Salida de manager: el cajero sigue sin poder; el manager cancela con referencia de la
+        devolucion y nota (queda en el chatter, las lineas se conservan) y la sesion ya puede cerrarse."""
         order, _data = self._sync([self._line("authorized")], draft=True)
-        manager_order = order.with_user(self.manager)
         with self.assertRaises(UserError):
-            manager_order.action_pos_order_cancel()
+            order.with_user(self.manager).action_pos_order_cancel()
         with self.assertRaises(UserError):
-            manager_order.unlink()
+            order.with_user(self.manager).unlink()
+        with self.assertRaises(AccessError):
+            order.with_user(self.cashier).redsys_manager_cancel("REF-1", "x")
         with self.assertRaises(UserError):
-            manager_order.payment_ids.unlink()
+            order.with_user(self.manager).redsys_manager_cancel("", "nota")
+        wiz = (
+            self.env["pos.order.redsys.cancel"]
+            .with_user(self.manager)
+            .with_context(active_model="pos.order", active_id=order.id)
+            .create(
+                {
+                    "refund_reference": "DEV-123",
+                    "note": "Cliente se fue; devuelto en el portal",
+                }
+            )
+        )
+        self.assertEqual(wiz.order_id, order)
+        wiz.action_cancel_order()
+        self.assertEqual(order.state, "cancel")
+        self.assertEqual(order.payment_ids.redsys_state, "authorized")  # rastro conservado
+        self.assertIn("DEV-123", " ".join(order.message_ids.mapped(lambda m: m.body or "")))
         res = self.pos_session.close_session_from_ui()
-        self.assertFalse(res.get("successful"))
-        self.assertIn(order.id, res.get("open_order_ids", []))
+        self.assertNotIn(order.id, res.get("open_order_ids", []))
 
-    def test_qa3_known_issue_09_reconcile_charged_duplicate_raises_raw_integrity_error(self):
-        """R3-05 (BAJO). `redsys_reconcile` escribe con `super(PosPayment, pay).write` (salta el wrapper que
-        traduce el IntegrityError): dos `unknown` con el mismo pedido (rellenado al resolver) conciliadas como
-        `charged` revientan con IntegrityError crudo en vez de ValidationError."""
-        from psycopg2 import IntegrityError
+    def test_qa3_08b_manager_cancel_refuses_unknown_lines(self):
+        order, _data = self._sync([self._line("unknown")], draft=True)
+        with self.assertRaises(UserError):
+            order.with_user(self.manager).redsys_manager_cancel("REF", "nota")
+        self.assertEqual(order.state, "draft")
 
+    def test_qa3_09_reconcile_charged_duplicate_raises_validation_error(self):
+        """R3-05. `redsys_reconcile` traduce el IntegrityError de los indices unicos."""
         from odoo.tools import mute_logger
 
         a, _ = self._sync([self._line("unknown")], draft=True)
-        b, _ = self._sync([self._line("unknown", uuid=str(uuid4()))], draft=True, order_uuid=str(uuid4()))
+        b, _ = self._sync(
+            [self._line("unknown", uuid=str(uuid4()))],
+            draft=True,
+            order_uuid=str(uuid4()),
+        )
         for pay in (a.payment_ids, b.payment_ids):
             pay.write({"transaction_id": "555555555555", "redsys_rts": "RTS-DUP-0000001"})
         both = (a | b).payment_ids
-        with mute_logger("odoo.sql_db"), self.assertRaises(IntegrityError):
+        with mute_logger("odoo.sql_db"), self.assertRaises(ValidationError):
             both.with_user(self.manager).redsys_reconcile("charged", "Dup")
-            self.env.flush_all()
 
 
 # Los tests heredados de la ronda 2 ya los ejecuta su propia clase: aqui se anulan para no duplicarlos.

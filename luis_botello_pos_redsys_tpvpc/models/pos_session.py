@@ -7,11 +7,7 @@ class PosSession(models.Model):
 
     def _redsys_unknown_message(self):
         """QA2-03: texto con el listado de cobros Redsys `unknown` de la sesión (vacío si no hay)."""
-        pays = (
-            self.env["pos.payment"]
-            .sudo()
-            .search([("session_id", "in", self.ids), ("redsys_state", "=", "unknown")])
-        )
+        pays = self.env["pos.payment"].sudo().search([("session_id", "in", self.ids), ("redsys_state", "=", "unknown")])
         if not pays:
             return ""
         lines = [
@@ -50,3 +46,12 @@ class PosSession(models.Model):
             if message:
                 raise UserError(message)
         return super().action_pos_session_closing_control(*args, **kwargs)
+
+    def _validate_session(self, *args, **kwargs):
+        """R3-03: `action_pos_session_validate`/`action_pos_session_close` son RPC públicos que llegan aquí
+        sin pasar por `_cannot_close_session`: no se valida una sesión con cobros Redsys `unknown`."""
+        for session in self.filtered(lambda s: s.state != "closed"):
+            message = session._redsys_unknown_message()
+            if message:
+                raise UserError(message)
+        return super()._validate_session(*args, **kwargs)

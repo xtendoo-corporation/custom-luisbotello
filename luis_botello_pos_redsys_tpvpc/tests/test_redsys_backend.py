@@ -1,5 +1,6 @@
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
+
 from odoo.addons.point_of_sale.tests.common import TestPoSCommon
 
 from .redsys_xml import redsys_xml
@@ -24,9 +25,7 @@ class TestRedsysBackend(TestPoSCommon):
             {
                 "name": "Redsys POS manager",
                 "login": "redsys_pos_manager",
-                "group_ids": [
-                    (6, 0, [cls.env.ref("point_of_sale.group_pos_manager").id])
-                ],
+                "group_ids": [(6, 0, [cls.env.ref("point_of_sale.group_pos_manager").id])],
             }
         )
 
@@ -71,9 +70,7 @@ class TestRedsysBackend(TestPoSCommon):
         fields_ = self.env["pos.payment.method"]._load_pos_data_fields(self.config)
         self.assertNotIn("redsys_signature_key", fields_)
         self.assertIn("redsys_merchant_code", fields_)
-        data = self.env["pos.payment.method"]._load_pos_data_read(
-            self.method, self.config
-        )
+        data = self.env["pos.payment.method"]._load_pos_data_read(self.method, self.config)
         self.assertNotIn("redsys_signature_key", data[0])
         self.assertEqual(data[0]["redsys_merchant_code"], "123456789")
 
@@ -81,8 +78,7 @@ class TestRedsysBackend(TestPoSCommon):
         other = self._create_method("3")  # no asignado a la config
         self.open_new_session()
         self.pos_session.user_id = self.pos_user
-        Method = self.env["pos.payment.method"].with_user(self.pos_user)
-        keys = Method.redsys_get_signature_key(self.config.id)
+        keys = self.env["pos.payment.method"].with_user(self.pos_user).redsys_get_signature_key(self.config.id)
         self.assertEqual(keys, {self.method.id: "SECRET-KEY"})
         self.assertNotIn(other.id, keys)
 
@@ -95,16 +91,12 @@ class TestRedsysBackend(TestPoSCommon):
             }
         )
         with self.assertRaises(AccessError):
-            self.env["pos.payment.method"].with_user(
-                portal
-            ).redsys_get_signature_key(self.config.id)
+            self.env["pos.payment.method"].with_user(portal).redsys_get_signature_key(self.config.id)
 
     def test_simulation_only_manager(self):
         Method = self.env["pos.payment.method"]
         with self.assertRaises(AccessError):
-            Method.browse(self.method.id).with_user(self.pos_user).write(
-                {"redsys_simulation": True}
-            )
+            Method.browse(self.method.id).with_user(self.pos_user).write({"redsys_simulation": True})
         self.method.with_user(self.pos_manager).write({"redsys_simulation": True})
         self.assertTrue(self.method.redsys_simulation)
 
@@ -131,6 +123,8 @@ class TestRedsysBackend(TestPoSCommon):
                 "redsys_reference": "ODOO-ABCD1234",
                 "redsys_rts": "RTS1",
                 "redsys_xml": redsys_xml(10, rts="RTS1"),
+                # R3-01: sin estado Redsys solo se admite una linea denegada/en curso del POS
+                **({} if state else {"payment_status": "retry"}),
             }
         )
 
@@ -202,15 +196,13 @@ class TestRedsysBackend(TestPoSCommon):
             {self.method.id: "SECRET-KEY"},
         )
         # un manager puede pedirla con sesión abierta
-        keys = self.env["pos.payment.method"].with_user(
-            self.pos_manager
-        ).redsys_get_signature_key(self.config.id)
+        keys = self.env["pos.payment.method"].with_user(self.pos_manager).redsys_get_signature_key(self.config.id)
         self.assertEqual(keys, {self.method.id: "SECRET-KEY"})
 
     def test_key_field_only_readable_by_manager(self):
         Method = self.env["pos.payment.method"]
         with self.assertRaises(AccessError):
-            Method.with_user(self.pos_user).browse(self.method.id).redsys_signature_key
+            _ = Method.with_user(self.pos_user).browse(self.method.id).redsys_signature_key
         self.assertEqual(
             Method.with_user(self.pos_manager).browse(self.method.id).redsys_signature_key,
             "SECRET-KEY",
@@ -239,7 +231,13 @@ class TestRedsysBackend(TestPoSCommon):
             self.env["pos.payment.redsys.reconcile"]
             .with_user(self.pos_manager)
             .with_context(active_model="pos.payment", active_ids=payment.ids)
-            .create({"resolution": "charged", "note": "Portal OK", "payment_ids": [(6, 0, payment.ids)]})
+            .create(
+                {
+                    "resolution": "charged",
+                    "note": "Portal OK",
+                    "payment_ids": [(6, 0, payment.ids)],
+                }
+            )
         )
         wizard.action_reconcile()
         self.assertEqual(payment.redsys_state, "authorized")
@@ -263,7 +261,5 @@ class TestRedsysBackend(TestPoSCommon):
         self.assertEqual(action.res_model, "pos.payment")
         self.assertIn("redsys_unknown", action.context)
         self.assertTrue(
-            self.env["ir.ui.view"].search(
-                [("model", "=", "pos.payment"), ("arch_db", "ilike", "redsys_state")]
-            )
+            self.env["ir.ui.view"].search([("model", "=", "pos.payment"), ("arch_db", "ilike", "redsys_state")])
         )
