@@ -77,8 +77,12 @@ class PosPayment(models.Model):
     @staticmethod
     def _redsys_parse_xml(xml):
         """Devuelve {etiqueta_en_minúsculas: texto} del primer valor de cada
-        etiqueta del XML de Redsys (pago, devolución o consulta). Sin entidades
-        ni red. Lanza ValueError si no es XML parseable."""
+        etiqueta del XML de Redsys. Sirve para los dos formatos que guarda el
+        cliente en `redsys_xml`: el de un cobro/devolución (`<Operaciones><resultadoOperacion>`)
+        y el de una operación recuperada por consulta (`<operacion>` de
+        `<resultadoConsulta>`, con `resultado` en MAYÚSCULAS y `firma` copiada de la
+        consulta); en ambos están pedido, identificadorRTS, factura, importe, estado
+        y resultado. Sin entidades ni red. Lanza ValueError si no es XML parseable."""
         if not (xml or "").strip():
             raise ValueError("empty")
         parser = etree.XMLParser(
@@ -131,6 +135,13 @@ class PosPayment(models.Model):
             ):
                 errors.append(_("the reference (factura) does not match"))
             method = pay.payment_method_id
+            # QA-10 (servidor): la firma MOCK solo la genera el simulador.
+            if (xml.get("firma") or "").upper().startswith("MOCK") and not (
+                method.sudo().redsys_simulation
+            ):
+                errors.append(
+                    _("the signature is a simulator (MOCK) one but the method is not in simulation")
+                )
             if xml.get("comercio") and xml["comercio"] != method.sudo().redsys_merchant_code:
                 errors.append(_("the merchant does not match the payment method"))
             if xml.get("terminal") and xml["terminal"] != method.sudo().redsys_terminal_number:

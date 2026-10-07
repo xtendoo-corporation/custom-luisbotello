@@ -14,7 +14,7 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
 from odoo.addons.point_of_sale.tests.common import TestPoSCommon
 
-from .redsys_xml import redsys_xml
+from .redsys_xml import redsys_query_op_xml, redsys_xml
 
 KEY = "QA-SECRET-KEY-9f8e7d6c"
 MODULE = Path(__file__).resolve().parent.parent
@@ -203,8 +203,10 @@ class TestRedsysQA(TestPoSCommon):
         self.assertEqual(payment.redsys_state, "authorized")
 
     def test_qa_18_unknown_can_be_cleared_and_deleted(self):
-        """QA-18 (BAJO, ABIERTO a propósito): unknown -> False sigue permitido porque el
-        cliente lo usa con 'not_charged'. La conciliación auditada es la vía recomendada."""
+        """QA-18 (BAJO, decisión documentada): unknown -> False sigue permitido porque es la
+        liberación que hace el cajero tras una denegación cierta de Redsys o tras confirmar en el
+        diálogo (reintento). `not_charged` queda para la conciliación auditada del manager
+        (nota obligatoria): un cajero no puede escribirlo. Ver DECISIONS J11/QA-18."""
         payment = self._payment("unknown")
         payment.write({"redsys_state": False})
         payment.unlink()
@@ -250,6 +252,52 @@ class TestRedsysQA(TestPoSCommon):
         self.assertEqual(refund.redsys_state, "refund")
         with self.assertRaises(ValidationError):  # sin original: no se admite duplicado
             self._payment("refund", amount=-20.0, xml=redsys_xml(-20.0))
+
+    def test_qa_20_recovered_by_query_xml_syncs(self):
+        """J11/QA-20: el XML que guarda la ruta de recuperación (operación de la consulta,
+        resultado en MAYÚSCULAS) sincroniza con los mismos chequeos que un cobro normal."""
+        pay = self._payment("authorized", amount=10.0, xml=redsys_query_op_xml(10.0))
+        self.assertEqual(pay.redsys_state, "authorized")
+        # devolución recuperada (importe negativo, pedido original compartido)
+        refund = self._payment(
+            "refund",
+            amount=-4.0,
+            xml=redsys_query_op_xml(-4.0),
+            redsys_original_pedido=pay.transaction_id,
+        )
+        self.assertEqual(refund.redsys_state, "refund")
+
+    def test_qa_20_recovered_by_query_xml_keeps_all_checks(self):
+        bad = {
+            "empty": "",
+            "denied": redsys_query_op_xml(10.0, estado="G", resultado="DENEGADA"),
+            "denied_f": redsys_query_op_xml(10.0, resultado="DENEGADA"),
+            "pending": redsys_query_op_xml(10.0, estado="P"),
+            "amount": redsys_query_op_xml(1.0),
+            "pedido": redsys_query_op_xml(10.0, pedido="999"),
+            "rts": redsys_query_op_xml(10.0, rts="OTHER"),
+            "factura": redsys_query_op_xml(10.0, factura="OTRA"),
+            "terminal": redsys_query_op_xml(10.0, terminal="9"),
+        }
+        for name, xml in bad.items():
+            with self.subTest(name), self.assertRaises(ValidationError):
+                self._payment("authorized", amount=10.0, xml=xml)
+        # minúsculas/mixto también válidos
+        self._payment("authorized", amount=10.0, xml=redsys_query_op_xml(10.0, resultado="autorizada"))
+
+    def test_qa_10_server_rejects_mock_signature_outside_simulation(self):
+        """QA-10 (servidor): firma MOCK solo con redsys_simulation; sirve para pago y consulta."""
+        mock = "MOCK" + "A" * 36
+        for xml in (
+            redsys_query_op_xml(10.0, firma=mock),
+            redsys_xml(10.0).replace("</resultadoOperacion>", f"<firma>{mock}</firma></resultadoOperacion>"),
+        ):
+            with self.subTest(xml[:20]), self.assertRaises(ValidationError):
+                self._payment("authorized", amount=10.0, xml=xml)
+        self.method.redsys_simulation = True
+        pay = self._payment("authorized", amount=10.0, xml=redsys_query_op_xml(10.0, firma=mock))
+        self.assertEqual(pay.redsys_state, "authorized")
+        self.method.redsys_simulation = False
 
     def test_qa_21_view_to_reconcile_unknown_payments(self):
         """QA-21: filtro/acción/menú para líneas unknown y conciliación auditada solo para managers."""
