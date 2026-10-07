@@ -57,6 +57,8 @@ export async function loadPos() {
     };
     await import(root + "overrides/pos_payment.js");
     await import(root + "overrides/payment_screen.js");
+    await import(root + "overrides/pos_store.js");
+    await import(root + "overrides/order_payment_validation.js");
     const payment = await import(root + "payment/payment_redsys_tpvpc.js");
     const service = await import(root + "services/redsys_tpvpc_service.js");
     const logic = await import(root + "utils/redsys_pos_logic.js");

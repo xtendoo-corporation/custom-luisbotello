@@ -10,12 +10,14 @@ import { reactive } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { AlertDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { loadJS } from "@web/core/assets";
+import { CODE_BUSY } from "../redsys/errors.js";
 import { createRedsysEntry } from "../utils/redsys_factory.js";
 import {
     POLL_INTERVAL_MS,
     RECOVERY_GRACE_MS,
     interpretQuery,
     makeStartMarks,
+    MARK_MAX_AGE_MS,
     isRedsysMethod,
     needsRecovery,
     recoveryWindow,
@@ -67,6 +69,7 @@ export const redsysTpvpcService = {
                 }
             })()
         );
+        marks.purge(MARK_MAX_AGE_MS); // QA2-15: marcas huérfanas de más de 7 días
         const state = reactive({ statuses: {}, recoveringCount: 0 });
 
         const alert = (title, body) => pos.dialog.add(AlertDialog, { title, body });
@@ -131,6 +134,11 @@ export const redsysTpvpcService = {
             }
             const r = await got.entry.redsys.init();
             if (!r.ok) {
+                if (r.code === CODE_BUSY) {
+                    // QA2-11: otra pestaña está usando el datáfono; no es un error del equipo.
+                    setStatus(method, statusFromCode(0, { busy: true }));
+                    return { ok: false, busy: true, message: r.message, entry: got.entry };
+                }
                 setStatus(method, { level: "error", text: r.message });
                 return { ok: false, message: r.message, entry: got.entry };
             }
@@ -204,6 +212,10 @@ export const redsysTpvpcService = {
                 const isRefund = line.getAmount() < 0;
                 const ready = await ensureReady(method);
                 let outcome;
+                if (!ready.ok && ready.busy) {
+                    // QA2-13: el datáfono lo usa otra pestaña (cerrojo ajeno): no es una consulta fallida.
+                    return { outcome: "skipped", message: "El datáfono está ocupado en otra ventana." };
+                }
                 if (!ready.ok) {
                     outcome = { outcome: "unknown", message: ready.message };
                 } else {
@@ -215,6 +227,10 @@ export const redsysTpvpcService = {
                         to,
                         type: isRefund ? "DEVOLUCION" : "PAGO",
                     });
+                    if (q.error && q.error.code === CODE_BUSY) {
+                        // QA2-13: BUSY (cerrojo de OTRA pestaña u operación propia) no es evidencia: se salta.
+                        return { outcome: "skipped", message: "El datáfono está ocupado." };
+                    }
                     const opts = {
                         reference,
                         amount: line.getAmount(),
@@ -296,13 +312,40 @@ export const redsysTpvpcService = {
          * Tras la CONFIRMACIÓN explícita del cajero de que no hay cobro (diálogo de Forzar): libera la línea
          * para reintentar. Solo si no hay operación en curso con ella.
          */
-        function releaseLine(line) {
+        async function releaseLine(line) {
             if (activeLines.has(line.uuid)) {
                 return false;
             }
+            const reference = line.redsys_reference || line.payment_ref_no;
+            if (typeof line.id === "number" && line.redsys_state === "unknown") {
+                // QA2-04: la línea YA está en el servidor como `unknown` (D10: no se puede modificar ni
+                // borrar). La liberación pasa por el servidor, que la deja `not_charged` auditada (usuario,
+                // fecha) y solo mientras el pedido siga en borrador; después el POS la borra y el cajero
+                // añade un pago nuevo. Si falla, la línea sigue bloqueada.
+                try {
+                    await orm.call("pos.payment", "redsys_release_unknown", [[line.id]]);
+                } catch (error) {
+                    alert(
+                        "Redsys: no se pudo liberar la línea",
+                        "El servidor ha rechazado la liberación (" +
+                            `${(error && error.data && error.data.message) || (error && error.message) || "error"}). ` +
+                            "La línea sigue bloqueada: pida a un responsable que la concilie en Punto de venta > Pagos Redsys a conciliar."
+                    );
+                    return false;
+                }
+                line.redsys_state = "not_charged";
+                marks.clear(reference);
+                const order = line.pos_order_id;
+                if (order && typeof order.removePaymentline === "function") {
+                    order.removePaymentline(line);
+                } else {
+                    line.setPaymentStatus("retry");
+                }
+                return true;
+            }
             line.redsys_state = false;
             line.setPaymentStatus("retry");
-            marks.clear(line.redsys_reference || line.payment_ref_no);
+            marks.clear(reference);
             return true;
         }
 
@@ -325,7 +368,9 @@ export const redsysTpvpcService = {
                 }
             } finally {
                 state.recoveringCount -= lines.length;
-                if (--blockCount === 0) {
+                if (--blockCount === 0 && pos.paymentTerminalInProgress === true) {
+                    // QA2-14: si el core ya apagó el indicador (su cobro terminó mientras recuperábamos),
+                    // no se resucita un `true` heredado.
                     pos.paymentTerminalInProgress = blockSaved;
                 }
             }

@@ -112,3 +112,45 @@ export class PaymentScreen {
         this.removed = [...(this.removed || []), uuid];
     }
 }
+
+// Réplica mínima de PosStore (point_of_sale/static/src/app/services/pos_store.js): solo los ganchos de borrado.
+export class PosStore {
+    async beforeDeleteOrder() {
+        return true; // en el core abre un diálogo "¿seguro?"
+    }
+    async _onBeforeDeleteOrder() {
+        return true;
+    }
+    addPendingOrder(ids) {
+        this.pending = [...(this.pending || []), ...ids];
+    }
+    async syncAllOrders(options) {
+        this.synced = [...(this.synced || []), options];
+        return true;
+    }
+}
+
+// Réplica mínima de OrderPaymentValidation: `validateOrder` llama a isOrderValid y DESPUÉS elimina las líneas
+// no done (order_payment_validation.js:103-135 del core 19).
+export default class OrderPaymentValidation {
+    constructor({ pos, order }) {
+        this.pos = pos;
+        this._order = order;
+    }
+    get order() {
+        return this._order;
+    }
+    get paymentLines() {
+        return this._order.payment_ids;
+    }
+    async isOrderValid() {
+        return true;
+    }
+    async validateOrder(isForceValidate) {
+        if (await this.isOrderValid(isForceValidate)) {
+            this._order.payment_ids = this._order.payment_ids.filter((l) => l.payment_status === "done");
+            return true;
+        }
+        return false;
+    }
+}

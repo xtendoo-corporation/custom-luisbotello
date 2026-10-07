@@ -130,8 +130,8 @@ test("makeStartMarks: memoria + storage, tolerante a fallos", () => {
     const store = new Map();
     const storage = { setItem: (k, v) => store.set(k, v), getItem: (k) => store.get(k) ?? null, removeItem: (k) => store.delete(k) };
     const a = makeStartMarks(storage);
-    a.set("R1", 123);
-    assert.equal(makeStartMarks(storage).get("R1"), 123, "sobrevive a una recarga (nuevo objeto, mismo storage)");
+    a.set("R1", 1_800_000_000_123);
+    assert.equal(makeStartMarks(storage).get("R1"), 1_800_000_000_123, "sobrevive a una recarga (nuevo objeto, mismo storage)");
     assert.equal(a.get("NOPE"), null);
     assert.equal(a.getOrStart("R2", 50), 50);
     assert.equal(a.getOrStart("R2", 99), 50);

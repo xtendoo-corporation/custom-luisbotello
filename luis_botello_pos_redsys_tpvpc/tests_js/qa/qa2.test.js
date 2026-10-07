@@ -79,7 +79,7 @@ describe("ronda 2: intentos de romper las correcciones", () => {
         assert.equal(line.payment_status, "force_done", "la reconsulta automática NO libera sola");
         assert.equal(line.redsys_state, "unknown");
         assert.equal(svc.unresolved(order).length, 1, "sigue bloqueando otro cobro");
-        assert.equal(svc.releaseLine(line), true);
+        assert.equal(await svc.releaseLine(line), true);
         assert.equal(line.payment_status, "retry");
         assert.ok(!line.redsys_state);
     });
@@ -135,7 +135,7 @@ describe("ronda 2: intentos de romper las correcciones", () => {
         assert.equal(marks.get("ODOO-Y"), 123, "cae a memoria");
     });
 
-    it("QA2-16 (BAJO) una marca vacía o '0' en localStorage (corrupción/manipulación) NO debe dar la gracia por vencida", { todo: "Number('') === 0 es finito: makeStartMarks.get devuelve 0 y elapsed supera la gracia al instante; basta validar /^\\d{13}$/" }, () => {
+    it("QA2-16 (BAJO) una marca vacía, '0' o no de 13 dígitos en localStorage NO da la gracia por vencida", () => {
         const marks = makeStartMarks({ getItem: () => "", setItem() {}, removeItem() {} });
         const got = marks.getOrStart("ODOO-Z", 1_800_000_000_000);
         assert.equal(got, 1_800_000_000_000, "una marca vacía debe tratarse como ausente");
@@ -153,10 +153,16 @@ describe("ronda 2: intentos de romper las correcciones", () => {
         for (const mode of ["throws", "never", "minus1"]) {
             const t = new FakeTransport();
             t.queue("fnDllOperPinPad", mode === "throws" ? { throws: true } : mode === "never" ? { never: true } : { Response: -1, Result: null });
-            const s = new RedsysService({ sleep: async () => {}, initCooldownMs: 0, callTimeoutMs: mode === "never" ? 20 : 0, locks });
+            const s = new RedsysService({ sleep: async () => {}, initCooldownMs: 0, callTimeoutMs: mode === "never" ? 20 : 0, orphanMs: 60, locks });
             s.configure({ merchant: "777888991", terminal: "1", signKey: KEY, port: "COM9:,19200,N,8,1", version: "6.1", transport: t });
             await s.init();
             await s.pay({ amount: 5, reference: "ODOO-LOCK0001" });
+            if (mode === "never") {
+                // QA2-12: tras un timeout local la DLL puede seguir viva: el cerrojo lo retiene el "huérfano"
+                // hasta el retorno tardío o el plazo (orphanMs), y entonces se libera solo.
+                assert.equal(held.size, 1, "cerrojo retenido mientras el cobro huérfano pueda seguir vivo");
+                await sleep(120);
+            }
             assert.equal(held.size, 0, `cerrojo liberado (${mode})`);
         }
     });
@@ -175,17 +181,88 @@ describe("ronda 2: intentos de romper las correcciones", () => {
 
 // ------------------------------------------------------------------------------------------------
 describe("ronda 2: hallazgos nuevos (todo = abiertos)", () => {
-    it("QA2-01 (BLOQUEANTE) cancelar/borrar un PEDIDO con líneas Redsys authorized/unknown debe estar protegido (pos._onBeforeDeleteOrder)", { todo: "El core borra el pedido entero (TicketScreen, botón 'Cancelar pedido', ClosingPopup > Cancel Orders) sin pasar por deletePaymentLine: se pierde un cobro con tarjeta si el pedido no estaba sincronizado" }, () => {
-        const src = productionSources().map(([, t]) => t).join("\n");
-        assert.ok(/_onBeforeDeleteOrder|beforeDeleteOrder/.test(src), "no hay ningún override de PosStore que proteja el borrado del pedido");
+    it("QA2-01 (BLOQUEANTE) cancelar/borrar un PEDIDO con líneas Redsys authorized/unknown/refund/en curso está bloqueado (PosStore.beforeDeleteOrder y _onBeforeDeleteOrder)", async () => {
+        const ctx = await fresh();
+        const { m, pos, addLine, dialogs } = ctx;
+        const store = new m.stubs.PosStore();
+        store.dialog = pos.dialog;
+        const order = ctx.order;
+        order.id = 5;
+        // pedido limpio (solo una línea Redsys denegada, sin estado): se puede borrar
+        const clean = addLine();
+        clean.setPaymentStatus("retry");
+        assert.equal(await store._onBeforeDeleteOrder(order), true, "sin cargo posible: se borra");
+        assert.equal(await store.beforeDeleteOrder(order), true);
+        order.payment_ids.length = 0;
+        for (const [name, vals] of [
+            ["authorized", { redsys_state: "authorized", payment_status: "done" }],
+            ["refund", { redsys_state: "refund", payment_status: "done", amount: -5 }],
+            ["unknown", { redsys_state: "unknown", payment_status: "force_done" }],
+            ["en curso", { payment_status: "waitingCard" }],
+            ["force_done sin estado", { payment_status: "force_done" }],
+        ]) {
+            order.payment_ids.length = 0;
+            addLine(vals);
+            const before = dialogs.length;
+            assert.equal(await store._onBeforeDeleteOrder(order), false, `${name}: _onBeforeDeleteOrder`);
+            assert.equal(await store.beforeDeleteOrder(order), false, `${name}: beforeDeleteOrder`);
+            assert.equal(dialogs.length, before + 2, `${name}: se explica al cajero`);
+        }
     });
 
-    it("QA2-02 (BLOQUEANTE) no se puede validar un pedido con una línea Redsys pendiente (force_done/unknown/en curso): el core la BORRA al validar", { todo: "order_payment_validation.js:118-129 elimina toda línea !isDone() antes de sincronizar; amountPaid solo cuenta las done, así que pagar el resto en efectivo borra el cobro dudoso del pedido" }, () => {
-        const src = productionSources().map(([, t]) => t).join("\n");
-        assert.ok(/isOrderValid|OrderPaymentValidation|validateOrder/.test(src), "ningún override intercepta la validación del pedido");
+    it("QA2-01 alternativa clara: 'Guardar el pedido para conciliación' solo con líneas ya con estado Redsys; con una operación en curso solo se explica", async () => {
+        const ctx = await fresh();
+        const { m, pos, addLine, dialogs, order } = ctx;
+        const store = new m.stubs.PosStore();
+        store.dialog = pos.dialog;
+        order.id = 9;
+        addLine({ redsys_state: "unknown", payment_status: "force_done", redsys_reference: "ODOO-SAVE0001" });
+        await store._onBeforeDeleteOrder(order);
+        const dlg = dialogs.at(-1);
+        assert.equal(dlg.props.confirmLabel, "Guardar el pedido para conciliación");
+        assert.match(dlg.props.body, /ODOO-SAVE0001/);
+        await dlg.props.confirm();
+        assert.deepEqual(store.pending, [9]);
+        assert.equal(store.synced.length, 1);
+        assert.deepEqual(store.synced[0].orders, [order]);
+        order.payment_ids.length = 0;
+        addLine({ payment_status: "waitingCard" });
+        await store._onBeforeDeleteOrder(order);
+        assert.equal(dialogs.at(-1).props.confirm, undefined, "sin ofrecer guardar mientras el datáfono trabaja");
     });
 
-    it("QA2-11 (MEDIO) Web Locks también para init() y checkStatus(): otra pestaña no debe tocar la DLL mientras una cobra", { todo: "Solo pay/refund/query toman el cerrojo; el init del arranque de otra pestaña (o el polling de 45 s) llega a la DLL durante un cobro ajeno" }, async () => {
+    it("QA2-02 (BLOQUEANTE) no se puede validar un pedido con una línea Redsys pendiente (force_done/unknown/en curso): el core la BORRARÍA", async () => {
+        const ctx = await fresh();
+        const { m, pos, addLine, dialogs, order } = ctx;
+        const make = () => new m.stubs.default({ pos, order });
+        // línea dudosa + efectivo pagado: el core ya no la borra porque isOrderValid la rechaza antes
+        const dudosa = addLine({ redsys_state: "unknown", payment_status: "force_done", redsys_reference: "ODOO-VAL00001" });
+        const cash = { uuid: "cash-1", payment_method_id: { use_payment_terminal: null }, payment_status: "done", amount: 12.34 };
+        order.payment_ids.push(cash);
+        const val = make();
+        assert.equal(await val.validateOrder(false), false);
+        assert.deepEqual(order.payment_ids, [dudosa, cash], "ninguna línea eliminada");
+        assert.match(dialogs.at(-1).props.body, /ODOO-VAL00001/);
+        assert.match(dialogs.at(-1).props.body, /no se puede validar/i);
+        // en curso y retry con estado unknown (QA-11) tampoco
+        for (const vals of [{ payment_status: "waitingCard" }, { payment_status: "retry", redsys_state: "unknown" }]) {
+            order.payment_ids.length = 0;
+            addLine(vals);
+            order.payment_ids.push(cash);
+            assert.equal(await make().validateOrder(false), false, JSON.stringify(vals));
+            assert.equal(order.payment_ids.length, 2);
+        }
+        // una línea confirmada a mano (done + unknown, va a conciliación) y una denegada limpia NO bloquean
+        order.payment_ids.length = 0;
+        const confirmada = addLine({ redsys_state: "unknown", payment_status: "done" });
+        const denegada = addLine({ payment_status: "retry" });
+        order.payment_ids.push(cash);
+        assert.equal(await make().validateOrder(false), true);
+        assert.deepEqual(order.payment_ids, [confirmada, cash], "el core elimina solo la denegada limpia");
+        void denegada;
+    });
+
+    it("QA2-11 (MEDIO) Web Locks también para init() y checkStatus(): otra pestaña no toca la DLL mientras una cobra", async () => {
         const held = new Set();
         const locks = {
             request(name, opts, cb) {
@@ -205,14 +282,16 @@ describe("ronda 2: hallazgos nuevos (todo = abiertos)", () => {
         const p = a.pay({ amount: 5, reference: "ODOO-TABA0001" });
         await sleep(10);
         const before = transport.callLog.length;
-        await b.init(); // pestaña B arrancando / recargando en mitad del cobro de A
+        const rb = await b.init(); // pestaña B arrancando / recargando en mitad del cobro de A
+        assert.equal(rb.code, "BUSY");
+        assert.equal(b.state, "uninitialized", "B no queda en FAILED por un cerrojo ajeno");
         await b.checkStatus();
         const touched = transport.callLog.slice(before).filter((c) => /initFnDll|fnDllCheckStatus/.test(c.cmd) && !/:response/.test(c.cmd));
         await p;
         assert.equal(touched.length, 0, `la pestaña B llamó a la DLL durante el cobro de A: ${touched.map((c) => c.cmd)}`);
     });
 
-    it("QA2-12 (MEDIO) tras un timeout local de cobro el cerrojo se libera pero la DLL puede seguir viva: otra pestaña no debe poder cobrar (orphan solo es local)", { todo: "El cerrojo se suelta en el finally de pay(); _orphan solo vive en la instancia que expiró" }, async () => {
+    it("QA2-12 (MEDIO) tras un timeout local de cobro el cerrojo se retiene mientras la DLL pueda seguir viva: otra pestaña no puede cobrar", async () => {
         const held = new Set();
         const locks = {
             request(name, opts, cb) {
@@ -238,7 +317,7 @@ describe("ronda 2: hallazgos nuevos (todo = abiertos)", () => {
         assert.equal(transport.count("fnDllOperPinPad"), 1, "B no debe haber enviado un 2º cobro mientras el 1º puede seguir vivo");
     });
 
-    it("QA2-13 (BAJO) recoverLine desde OTRA pestaña con el cerrojo ocupado debe ser 'skipped', no marcar 'unknown' la línea viva", { todo: "BUSY por cerrojo ajeno se interpreta como consulta fallida y la copia local (y la de IndexedDB) pasa a force_done" }, async () => {
+    it("QA2-13 (BAJO) recoverLine desde OTRA pestaña con el cerrojo ocupado es 'skipped', no marca 'unknown' la línea viva", async () => {
         const held = new Set(["redsys-777888991-1"]); // la pestaña A tiene el cerrojo
         const locks = {
             request(name, opts, cb) {
@@ -256,7 +335,7 @@ describe("ronda 2: hallazgos nuevos (todo = abiertos)", () => {
         assert.notEqual(line.redsys_state, "unknown");
     });
 
-    it("QA2-14 (BAJO) recoverOrder no debe restaurar paymentTerminalInProgress=true si el cobro en curso terminó mientras recuperaba", { todo: "blockSaved se captura al empezar; si el core pone false entre medias, al terminar se restaura true y se bloquean todos los cobros con terminal hasta recargar" }, async () => {
+    it("QA2-14 (BAJO) recoverOrder no restaura paymentTerminalInProgress=true si el cobro en curso terminó mientras recuperaba", async () => {
         const ctx = await fresh();
         const line = ctx.addLine({ redsys_reference: "ODOO-SAVED001", payment_ref_no: "ODOO-SAVED001", redsys_state: "unknown" });
         line.setPaymentStatus("force_done");
@@ -267,9 +346,34 @@ describe("ronda 2: hallazgos nuevos (todo = abiertos)", () => {
         assert.equal(ctx.pos.paymentTerminalInProgress, false);
     });
 
-    it("QA2-15 (BAJO) las marcas redsys_start:* de líneas confirmadas manualmente ('Está autorizada') o de pedidos descartados no se purgan nunca", { todo: "no hay TTL ni barrido; el único borrado es por referencia al resolver. Fuga lenta y no secreta, pero sin límite" }, () => {
-        const src = productionSources().find(([f]) => f.endsWith("redsys_pos_logic.js"))[1];
-        assert.ok(/purge|prune|ttl|expire|MAX_AGE/i.test(src), "sin purga de marcas");
+    it("QA2-15 (BAJO) las marcas redsys_start:* huérfanas se purgan por antigüedad (y las corruptas) al arrancar el servicio", async () => {
+        const now = 1_800_000_000_000;
+        const store = new Map([
+            ["redsys_start:ODOO-OLD00001", String(now - 8 * 24 * 3600 * 1000)],
+            ["redsys_start:ODOO-NEW00001", String(now - 3600 * 1000)],
+            ["redsys_start:ODOO-BAD00001", "0"],
+            ["otra_clave", "1"],
+        ]);
+        const storage = {
+            get length() { return store.size; },
+            key: (i) => [...store.keys()][i] ?? null,
+            getItem: (k) => (store.has(k) ? store.get(k) : null),
+            setItem: (k, v) => store.set(k, String(v)),
+            removeItem: (k) => store.delete(k),
+        };
+        const marks = makeStartMarks(storage);
+        assert.equal(marks.purge(7 * 24 * 3600 * 1000, now), 2);
+        assert.deepEqual([...store.keys()].sort(), ["otra_clave", "redsys_start:ODOO-NEW00001"]);
+        // el servicio real la invoca al arrancar (storage inyectado antes de crearlo)
+        await makePos();
+        globalThis.window.localStorage = storage;
+        store.set("redsys_start:ODOO-OLD00002", "1500000000000");
+        try {
+            await fresh();
+            assert.ok(!store.has("redsys_start:ODOO-OLD00002"), "purga al arrancar");
+        } finally {
+            delete globalThis.window.localStorage;
+        }
     });
 });
 
@@ -281,5 +385,47 @@ describe("ronda 2: higiene de canales entre pestañas", () => {
         }
         const withLocal = productionSources().filter(([, t]) => /localStorage/.test(t)).map(([f]) => f);
         assert.deepEqual(withLocal.sort(), ["app/services/redsys_tpvpc_service.js"]);
+    });
+});
+
+// ------------------------------------------------------------------------------------------------
+describe("ronda 3: liberar una línea unknown ya sincronizada (QA2-04, cliente)", () => {
+    it("línea con id de servidor: la liberación pasa por el RPC redsys_release_unknown, queda not_charged y el POS la elimina", async () => {
+        const ctx = await fresh();
+        const removed = [];
+        ctx.order.removePaymentline = (l) => removed.push(l);
+        const line = ctx.addLine({ id: 77, redsys_state: "unknown", redsys_reference: "ODOO-REL00001", payment_ref_no: "ODOO-REL00001" });
+        line.setPaymentStatus("force_done");
+        assert.equal(await ctx.svc.releaseLine(line), true);
+        const call = ctx.rpc.find((c) => c.fn === "redsys_release_unknown");
+        assert.deepEqual(call.args, [[77]]);
+        assert.equal(call.model, "pos.payment");
+        assert.equal(line.redsys_state, "not_charged", "coincide con el servidor: el sync no intentará unknown -> False");
+        assert.deepEqual(removed, [line]);
+    });
+
+    it("si el servidor rechaza la liberación la línea sigue bloqueada (unknown/force_done) y se avisa", async () => {
+        const ctx = await fresh();
+        ctx.orm.call = async () => {
+            throw new Error("denegado");
+        };
+        // el servicio guarda su propio orm: se reemplaza vía un servicio nuevo con el mismo pos
+        const svc = ctx.m.service.redsysTpvpcService.start(ctx.pos.env, { pos: ctx.pos, orm: ctx.orm });
+        const line = ctx.addLine({ id: 78, redsys_state: "unknown" });
+        line.setPaymentStatus("force_done");
+        assert.equal(await svc.releaseLine(line), false);
+        assert.equal(line.redsys_state, "unknown");
+        assert.equal(line.payment_status, "force_done");
+        assert.match(ctx.dialogs.at(-1).props.title, /no se pudo liberar/i);
+    });
+
+    it("línea solo local (sin id de servidor): se libera como antes, sin RPC", async () => {
+        const ctx = await fresh();
+        const line = ctx.addLine({ redsys_state: "unknown" });
+        line.setPaymentStatus("force_done");
+        assert.equal(await ctx.svc.releaseLine(line), true);
+        assert.equal(ctx.rpc.filter((c) => c.fn === "redsys_release_unknown").length, 0);
+        assert.equal(line.payment_status, "retry");
+        assert.ok(!line.redsys_state);
     });
 });

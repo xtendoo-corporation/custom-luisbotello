@@ -149,8 +149,14 @@ patch(PaymentScreen.prototype, {
                     "que NO se ha cobrado. Si duda, no confirme.",
                 confirmLabel: "No se cobró: permitir reintentar",
                 cancelLabel: "Mantener bloqueada",
-                confirm: () => {
-                    service.releaseLine(line);
+                confirm: async () => {
+                    const released = await service.releaseLine(line);
+                    if (released && line.redsys_state === "not_charged") {
+                        this._redsysAlert(
+                            "Redsys",
+                            "Línea liberada y eliminada (queda registrada en el servidor). Añada de nuevo el pago para reintentar."
+                        );
+                    }
                 },
                 cancel: () => {},
             });

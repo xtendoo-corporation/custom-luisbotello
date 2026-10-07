@@ -249,8 +249,9 @@ export function makeStartMarks(storage = null, prefix = "redsys_start:") {
                 return mem.get(reference);
             }
             const raw = safe((st) => st.getItem(prefix + reference));
-            const n = raw === null || raw === undefined ? NaN : Number(raw);
-            return Number.isFinite(n) ? n : null;
+            // QA2-16: solo un entero de 13 dígitos (ms desde epoch) es una marca válida; "", "0", texto o
+            // valores truncados se tratan como AUSENTES (nunca dan la gracia por vencida).
+            return isValidMark(raw) ? Number(raw) : null;
         },
         /** Primera vez que vemos la línea sin marca: la gracia empieza ahora. */
         getOrStart(reference, ms = Date.now()) {
@@ -265,7 +266,42 @@ export function makeStartMarks(storage = null, prefix = "redsys_start:") {
             mem.delete(reference);
             safe((st) => st.removeItem(prefix + reference));
         },
+        /**
+         * QA2-15: barrido de marcas huérfanas (confirmadas a mano, pedidos descartados). Borra las de
+         * más de `maxAgeMs` y las corruptas. Una marca vencida de una línea aún sin resolver se
+         * recrea (gracia nueva) en la siguiente recuperación: es el sentido conservador.
+         * @returns {number} marcas eliminadas
+         */
+        purge(maxAgeMs = MARK_MAX_AGE_MS, now = Date.now()) {
+            return safe((st) => {
+                const keys = [];
+                const total = Number(st.length) || 0;
+                for (let i = 0; i < total; i++) {
+                    const k = typeof st.key === "function" ? st.key(i) : null;
+                    if (typeof k === "string" && k.startsWith(prefix)) {
+                        keys.push(k);
+                    }
+                }
+                let removed = 0;
+                for (const k of keys) {
+                    const raw = st.getItem(k);
+                    if (!isValidMark(raw) || now - Number(raw) > maxAgeMs) {
+                        st.removeItem(k);
+                        mem.delete(k.slice(prefix.length));
+                        removed += 1;
+                    }
+                }
+                return removed;
+            }, 0);
+        },
     };
+}
+
+/** Edad máxima de una marca de inicio antes de purgarla (QA2-15). */
+export const MARK_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+
+function isValidMark(raw) {
+    return typeof raw === "string" && /^\d{13}$/.test(raw);
 }
 
 // -------------------------------------------------------------- borrado (QA-23)
@@ -427,6 +463,78 @@ export function unresolvedLines(lines, exceptUuid = null) {
             (l.redsys_state === "unknown" ||
                 IN_FLIGHT_STATUSES.includes(l.payment_status) ||
                 l.payment_status === "force_done")
+    );
+}
+
+/** Estados Redsys que acreditan (o pueden acreditar) un cargo en tarjeta. */
+export const CHARGE_STATES = ["authorized", "unknown", "refund"];
+
+/**
+ * QA2-02: líneas Redsys que el core ELIMINARÍA al validar (`!line.isDone()`) y que no se pueden perder:
+ * en curso, forzadas/pendientes de confirmar, o con estado Redsys de cargo sin estar `done`.
+ * Una línea `done` (incluida la confirmada a mano, que va a conciliación) NO bloquea. Una línea
+ * `retry` limpia (denegada, sin estado Redsys) tampoco: el core puede eliminarla sin perder nada.
+ */
+export function pendingRedsysLines(lines) {
+    return (lines || []).filter((l) => {
+        if (!isRedsysMethod(l.payment_method_id) || l.payment_status === "done") {
+            return false;
+        }
+        return (
+            CHARGE_STATES.includes(l.redsys_state) ||
+            IN_FLIGHT_STATUSES.includes(l.payment_status) ||
+            l.payment_status === "force_done"
+        );
+    });
+}
+
+/**
+ * QA2-01: líneas Redsys que impiden borrar/cancelar el PEDIDO entero: cualquier cargo registrado o
+ * posible (authorized/unknown/refund), operación en curso o línea forzada.
+ */
+export function orderDeletionBlockers(order) {
+    return ((order && order.payment_ids) || []).filter(
+        (l) =>
+            isRedsysMethod(l.payment_method_id) &&
+            (CHARGE_STATES.includes(l.redsys_state) ||
+                IN_FLIGHT_STATUSES.includes(l.payment_status) ||
+                l.payment_status === "force_done")
+    );
+}
+
+/** ¿Se puede ofrecer "guardar para conciliación"? Solo si todas tienen ya un estado Redsys y nada está en curso. */
+export function canSaveForReconciliation(blockers) {
+    return (
+        blockers.length > 0 &&
+        blockers.every(
+            (l) => CHARGE_STATES.includes(l.redsys_state) && !IN_FLIGHT_STATUSES.includes(l.payment_status)
+        )
+    );
+}
+
+const refOf = (l) => l.redsys_reference || l.payment_ref_no || "?";
+const eur = (l) => Math.abs(Number(l.amount) || 0).toFixed(2);
+const describeLines = (lines) => lines.map((l) => `- ${refOf(l)} (${eur(l)} EUR)`).join("\n");
+
+export function deletionBlockedMessage(blockers) {
+    const saveable = canSaveForReconciliation(blockers);
+    return (
+        "Este pedido tiene cobros con el datáfono que se han realizado o pueden haberse realizado:\n" +
+        `${describeLines(blockers)}\n\n` +
+        "No se puede cancelar ni borrar: se perdería el rastro de un cargo en tarjeta. " +
+        (saveable
+            ? "Puede guardar el pedido en el servidor para que un responsable lo concilie, o finalizarlo y devolver el cobro después."
+            : "Espere al resultado de la operación en curso, resuelva la línea (Forzar tras verificar en el portal de Redsys) y vuelva a intentarlo.")
+    );
+}
+
+export function validationBlockedMessage(pending) {
+    return (
+        "Hay cobros con el datáfono sin resolver en este pedido:\n" +
+        `${describeLines(pending)}\n\n` +
+        "No se puede validar: el POS eliminaría esas líneas y el cargo quedaría sin registro. " +
+        "Resuélvalas antes (espere al resultado, o use Forzar tras verificar la operación en el portal de Redsys) " +
+        "y valide de nuevo."
     );
 }
 
