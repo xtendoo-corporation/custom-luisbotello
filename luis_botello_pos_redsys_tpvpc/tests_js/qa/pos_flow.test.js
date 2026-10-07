@@ -1,12 +1,11 @@
 // QA independiente: flujo de la capa POS (PaymentInterface + servicio OWL + parche de PosPayment)
 // REALES sobre stubs de Odoo (ver harness/) y el MockTransport real detrás.
 // No cubre PaymentScreen (overrides/payment_screen.js): requiere navegador, ver docs/qa_report.md.
-// `openIt` = HALLAZGO ABIERTO (comportamiento deseado; hoy falla => 'todo').
+// Los hallazgos QA corregidos son tests normales; los que siguen abiertos llevan { todo } en adversarial.test.js.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { KEY, makePos, tick, transportOf } from "./harness/pos.js";
 
-const openIt = (name, fn, opts) => it(name, opts, fn);
 const payCount = (t) => t.callLog.filter((c) => c.cmd === "fnDllOperPinPad").length;
 const charges = (t) => t.operations.filter((o) => o.tipoOper === "Autorizacion" && o.resultado === "Autorizada");
 
@@ -79,7 +78,7 @@ describe("PaymentRedsysTpvpc: cobro", () => {
         assert.match(dialogs.at(-1).props.title, /pendiente/i);
     });
 
-    openIt("QA-11 una línea 'unknown' o 'authorized' no debe poder volver a cobrarse invocando de nuevo su propia pay()", async () => {
+    it("QA-11 una línea 'unknown' o 'authorized' no debe poder volver a cobrarse invocando de nuevo su propia pay()", async () => {
         const { addLine, transport } = await fresh();
         const a = addLine();
         transport.forceNext("unknown_query_fails");
@@ -88,26 +87,35 @@ describe("PaymentRedsysTpvpc: cobro", () => {
         await a.pay(); // p. ej. "Reintentar" tras una recuperación fallida, tecla rápida, otra pestaña que reenvía
         const before = charges(transport).length;
         assert.equal(before, 1, `la misma línea (misma referencia) se cobró de nuevo: ${before} cargos`);
-        const done = addLine();
-        await done.pay();
-        await done.pay();
-        assert.equal(charges(transport).length, 2, "una línea ya autorizada tampoco debe reenviarse");
-    }, { todo: "QA-11: _run excluye la propia línea de unresolvedLines y no mira su redsys_state; la defensa depende solo de la UI (botón Reintentar)" });
+    });
 
-    openIt("QA-13 doble clic en 'Reintentar': el 2º sendPaymentRequest no debe dejar la línea en 'retry' mientras el 1º sigue en curso", async () => {
+    it("QA-11 una línea ya 'authorized' tampoco se reenvía: pay() de nuevo es idempotente (done, un solo cargo)", async () => {
+        const { addLine, transport } = await fresh();
+        const done = addLine();
+        assert.equal(await done.pay(), true);
+        assert.equal(await done.pay(), true);
+        assert.equal(done.payment_status, "done");
+        assert.equal(done.redsys_state, "authorized");
+        assert.equal(charges(transport).length, 1, "una línea ya autorizada no se reenvía");
+        assert.equal(payCount(transport), 1);
+    });
+
+    it("QA-13 doble clic en 'Reintentar': el 2º sendPaymentRequest no debe dejar la línea en 'retry' mientras el 1º sigue en curso", async () => {
         const { addLine, transport, svc, method } = await fresh();
         transport.setLatency({ cardRead: 60, process: 10, init: 0 });
         const line = addLine();
         const p1 = line.pay();
         const p2 = line.pay(); // doble clic dentro del mismo fotograma
-        await p2;
+        await tick(20); // el primer cobro sigue en el datáfono (esperando tarjeta)
         const midStatus = line.payment_status;
         assert.ok(svc.isOperationActive(method), "el primer cobro sigue en el datáfono");
         assert.notEqual(midStatus, "retry", "en 'retry' el cajero puede borrar la línea => cobro sin línea (huérfano) o reintentar");
         assert.equal(await p1, true);
+        assert.equal(await p2, true);
         assert.equal(payCount(transport), 1);
         assert.equal(charges(transport).length, 1);
-    }, { todo: "QA-13: el 2º cobro recibe BUSY, interpretPayResult => retry, y PosPayment.handlePaymentResponse(false) pone 'retry' sobre la línea en curso" });
+        assert.equal(line.payment_status, "done");
+    });
 
     it("doble clic: aunque el estado se confunda, el datáfono recibe UN solo cobro y el resultado final es done", async () => {
         const { addLine, transport } = await fresh();
@@ -224,14 +232,14 @@ describe("Recarga a mitad (recoverOrder)", () => {
         assert.equal(pos.paymentTerminalInProgress, false);
     });
 
-    openIt("QA-14 dos recuperaciones solapadas (arranque + PaymentScreen.onMounted) dejan paymentTerminalInProgress=true para siempre", async () => {
+    it("QA-14 dos recuperaciones solapadas (arranque + PaymentScreen.onMounted) dejan paymentTerminalInProgress=true para siempre", async () => {
         const { addLine, svc, order, pos } = await fresh();
         inFlight(addLine);
         await Promise.all([svc.recoverOrder(order, { silent: true }), svc.recoverOrder(order, { silent: true })]);
         assert.equal(pos.paymentTerminalInProgress, false, "bloqueo permanente de cobros con terminal hasta recargar");
-    }, { todo: "QA-14: cada recoverOrder guarda hadBlock=pos.paymentTerminalInProgress y lo restaura al terminar; la 2ª restaura 'true' (lo puso la 1ª)" });
+    });
 
-    openIt("QA-15 recoverOrder (PaymentScreen.onMounted) sobre una línea cuyo cobro está EN CURSO en esta pestaña no debe marcarla 'unknown'", async () => {
+    it("QA-15 recoverOrder (PaymentScreen.onMounted) sobre una línea cuyo cobro está EN CURSO en esta pestaña no debe marcarla 'unknown'", async () => {
         const { addLine, transport, svc, order } = await fresh();
         transport.setLatency({ cardRead: 60, process: 10, init: 0, consult: 0 });
         const line = addLine();
@@ -242,7 +250,55 @@ describe("Recarga a mitad (recoverOrder)", () => {
         assert.notEqual(line.redsys_state, "unknown", "el servicio está ocupado: la consulta falla y se marca unknown");
         await p;
         assert.equal(line.payment_status, "retry", "denegada de verdad: debe poder reintentarse, no quedar en force_done");
-    }, { todo: "QA-15: recoverLine no distingue 'en curso en este mismo servicio' de 'huérfana tras recarga'; ensureReady devuelve BUSY y se aplica el resultado unknown" });
+    });
+});
+
+describe("QA-23 PaymentScreen.deletePaymentLine (override real sobre stub del core)", () => {
+    async function screenFor(ctx) {
+        const { PaymentScreen } = ctx.m.stubs;
+        const screen = Object.create(PaymentScreen.prototype);
+        screen.paymentLines = ctx.order.payment_ids;
+        screen.redsys = ctx.svc;
+        screen.dialog = ctx.pos.dialog;
+        return screen;
+    }
+
+    it("unknown/force_done, authorized y en curso NO se borran y se explica; retry limpio y no Redsys sí", async () => {
+        const ctx = await fresh();
+        const screen = await screenFor(ctx);
+        const unknown = ctx.addLine();
+        ctx.transport.forceNext("unknown_query_fails");
+        await unknown.pay();
+        assert.equal(unknown.payment_status, "force_done");
+        screen.deletePaymentLine(unknown.uuid);
+        assert.equal(screen.removed, undefined, "una línea dudosa no se borra");
+        assert.match(ctx.dialogs.at(-1).props.body, /puede haberse realizado/);
+
+        const retry = ctx.addLine();
+        retry.payment_status = "retry";
+        screen.deletePaymentLine(retry.uuid);
+        assert.deepEqual(screen.removed, [retry.uuid], "retry limpio (sin cobro) sí se borra");
+
+        const other = { uuid: "zzz", payment_method_id: { use_payment_terminal: "adyen" }, redsys_state: "unknown" };
+        ctx.order.payment_ids.push(other);
+        screen.deletePaymentLine("zzz");
+        assert.deepEqual(screen.removed, [retry.uuid, "zzz"]);
+    });
+
+    it("una línea autorizada o con el cobro en curso (doble clic + papelera) no se borra", async () => {
+        const ctx = await fresh();
+        const screen = await screenFor(ctx);
+        ctx.transport.setLatency({ cardRead: 60, process: 10, init: 0 });
+        const line = ctx.addLine();
+        const p = line.pay();
+        await tick(20);
+        line.payment_status = "retry"; // peor caso: estado 'retry' con el cobro vivo
+        screen.deletePaymentLine(line.uuid);
+        assert.equal(screen.removed, undefined);
+        await p;
+        screen.deletePaymentLine(line.uuid);
+        assert.equal(screen.removed, undefined, "authorized tampoco");
+    });
 });
 
 describe("Devoluciones desde la PaymentInterface", () => {
@@ -308,5 +364,32 @@ describe("Devoluciones desde la PaymentInterface", () => {
         assert.equal(r.redsys_original_pedido, orig.transaction_id);
         const next = refundLine(ctx, orig, 13); // 8 (dudosa) + 13 > 20
         assert.equal(await next.pay(), false);
+    });
+    it("QA-24 con varias tarjetas Redsys en el pedido original, tras recargar se devuelve a la MISMA que se eligió", async () => {
+        const ctx = await fresh();
+        const origA = await paidOriginal(ctx, 20);
+        const origB = await paidOriginal(ctx, 30);
+        const refundedOrder = { payment_ids: [origA, origB] };
+        const reload = (line) => {
+            line.uiState.redsysRefund = null; // la recarga pierde uiState
+            line.pos_order_id = { ...ctx.order, lines: [{ refunded_orderline_id: { order_id: refundedOrder } }] };
+            return ctx.iface.refundInfoFor(line);
+        };
+        const lineB = refundLine(ctx, origB, 5);
+        const infoB = reload(lineB);
+        assert.equal(infoB.pedido, origB.transaction_id, "no la primera tarjeta válida");
+        assert.equal(infoB.amount, 30, "límite = importe de la tarjeta elegida");
+        const lineA = refundLine(ctx, origA, 5);
+        assert.equal(reload(lineA).pedido, origA.transaction_id);
+        // sin elección persistida y con varias tarjetas: ambiguo => sin info (la devolución se rechaza)
+        const anon = refundLine(ctx, origA, 5);
+        anon.redsys_original_pedido = false;
+        assert.equal(reload(anon), null);
+        // con una sola tarjeta sí es inequívoco
+        refundedOrder.payment_ids = [origA];
+        assert.equal(reload(anon).pedido, origA.transaction_id);
+        // el pedido persistido ya no está entre los cobros válidos: no se cae a otra tarjeta
+        const lost = refundLine(ctx, origB, 5);
+        assert.equal(reload(lost), null);
     });
 });

@@ -38,7 +38,9 @@ export function createRedsysEntry({ method, signKey, search = "", loader, docume
     } else {
         transport = new RealJsTransport({ loader });
     }
-    const redsys = new RedsysService(serviceOptions).configure({
+    // QA-22: exclusión entre pestañas con Web Locks (si el navegador no los tiene, se degrada al guardián del datáfono).
+    const locks = (typeof navigator !== "undefined" && navigator.locks) || null;
+    const redsys = new RedsysService({ locks, ...serviceOptions }).configure({
         merchant: method.redsys_merchant_code,
         terminal: method.redsys_terminal_number,
         signKey,

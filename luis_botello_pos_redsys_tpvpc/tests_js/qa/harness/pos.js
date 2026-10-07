@@ -56,6 +56,7 @@ export async function loadPos() {
         return origSetLatency.call(this, l ?? 0);
     };
     await import(root + "overrides/pos_payment.js");
+    await import(root + "overrides/payment_screen.js");
     const payment = await import(root + "payment/payment_redsys_tpvpc.js");
     const service = await import(root + "services/redsys_tpvpc_service.js");
     const logic = await import(root + "utils/redsys_pos_logic.js");

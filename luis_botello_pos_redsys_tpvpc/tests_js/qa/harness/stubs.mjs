@@ -103,3 +103,12 @@ export function patch(obj, extension) {
     }
     d.skeleton = Object.setPrototypeOf(extension, d.skeleton);
 }
+
+// Réplica mínima de PaymentScreen: solo lo que ejercitan los tests de overrides/payment_screen.js.
+export class PaymentScreen {
+    setup() {}
+    deletePaymentLine(uuid) {
+        // core 19: borra directo salvo en waiting/waitingCard/timeout (que pasa por sendPaymentCancel)
+        this.removed = [...(this.removed || []), uuid];
+    }
+}

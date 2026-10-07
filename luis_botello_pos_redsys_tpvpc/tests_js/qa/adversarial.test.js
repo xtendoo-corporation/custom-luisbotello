@@ -363,18 +363,80 @@ describe("'unknown' nunca es éxito ni fallo", () => {
         assert.equal(charges(transport).length, 1);
     });
 
-    openIt("QA-23 una línea Redsys 'unknown' (force_done) o 'retry' en curso no debe poder borrarse desde la UI del POS", () => {
-        const text = fs.readFileSync(path.join(SRC, "app/overrides/payment_screen.js"), "utf8");
-        assert.match(text, /deletePaymentLine\s*\(/, "no hay override de PaymentScreen.deletePaymentLine");
-    }, { todo: "QA-23: payment_lines.xml ofrece el botón borrar salvo en done/reversed/waitingCard; core deletePaymentLine hace removePaymentline directo si el estado es force_done o retry (sin llamar a sendPaymentCancel) => un cobro dudoso desaparece del POS y el cajero vuelve a cobrar" });
+    it("QA-22 exclusión entre pestañas: la fábrica enlaza navigator.locks (Web Locks) al servicio", () => {
+        const text = fs.readFileSync(path.join(SRC, "app/utils/redsys_factory.js"), "utf8").replace(/\/\/.*$/gm, "");
+        assert.match(text, /navigator\.locks/);
+        assert.match(text, /new RedsysService\(\{\s*locks/);
+    });
 
-    openIt("QA-22 debe existir exclusión entre pestañas/ventanas (Web Locks o BroadcastChannel) además del guardián del datáfono", () => {
-        const text = walk(SRC)
-            .filter((f) => f.endsWith(".js") && !f.includes(`${path.sep}mock${path.sep}`))
-            .map((f) => fs.readFileSync(f, "utf8"))
-            .join("\n");
-        assert.match(text, /navigator\.locks|BroadcastChannel|addEventListener\(\s*["']storage["']/);
-    }, { todo: "QA-22: isBusy() es por instancia; dos pestañas del mismo PC cobrando el MISMO pedido (líneas distintas) dependen solo de que el servicio local rechace la 2ª operación (S8f, no verificado)" });
+    describe("QA-22 Web Locks (cerrojo por comercio/terminal)", () => {
+        // Réplica mínima de navigator.locks.request(name, {ifAvailable:true}, cb) con cerrojos compartidos.
+        const makeLocks = () => {
+            const held = new Set();
+            return {
+                held,
+                request(name, opts, cb) {
+                    if (held.has(name)) {
+                        return Promise.resolve(cb(null));
+                    }
+                    held.add(name);
+                    return Promise.resolve(cb({ name })).finally(() => held.delete(name));
+                },
+            };
+        };
+        const tab = (locks, transport) => {
+            const s = new RedsysService({ sleep: async () => {}, initCooldownMs: 0, callTimeoutMs: 0, locks });
+            s.configure({ merchant: "777888991", terminal: "1", signKey: KEY, port: "COM9:,19200,N,8,1", version: "6.1", transport });
+            return s;
+        };
+
+        it("la 2ª pestaña recibe BUSY SIN tocar el datáfono mientras la 1ª cobra; luego se libera", async () => {
+            const locks = makeLocks();
+            const transport = new MockTransport({ latency: { cardRead: 40, process: 10, init: 0, consult: 0 }, logger: () => {} });
+            const [a, b] = [tab(locks, transport), tab(locks, transport)];
+            await a.init();
+            await b.init();
+            const [ra, rb] = await Promise.all([
+                a.pay({ amount: 12.34, reference: "ODOO-TABA0001" }),
+                (async () => { await sleep(5); return b.pay({ amount: 12.34, reference: "ODOO-TABB0002" }); })(),
+            ]);
+            assert.equal(ra.status, "authorized");
+            assert.equal(rb.status, "error");
+            assert.equal(rb.errorCode, "BUSY");
+            assert.match(rb.userMessage, /otra (ventana|pestaña)/i);
+            assert.equal(transport.busyViolations, 0, "no llegó al datáfono");
+            assert.equal(charges(transport).length, 1);
+            assert.equal(locks.held.size, 0, "cerrojo liberado");
+            assert.equal(b.isBusy(), false);
+            const again = await b.pay({ amount: 12.34, reference: "ODOO-TABB0003" });
+            assert.equal(again.status, "authorized");
+        });
+
+        it("la consulta pública también respeta el cerrojo y las devoluciones lo liberan", async () => {
+            const locks = makeLocks();
+            const transport = new MockTransport({ latency: { cardRead: 40, process: 10, init: 0, consult: 0 }, logger: () => {} });
+            const [a, b] = [tab(locks, transport), tab(locks, transport)];
+            await a.init();
+            await b.init();
+            const p = a.pay({ amount: 5, reference: "ODOO-TABA0001" });
+            await sleep(5);
+            const q = await b.query({ reference: "ODOO-TABA0001", from: new Date(Date.now() - 6e5), to: new Date(Date.now() + 6e5), type: "PAGO" });
+            assert.equal(q.error.code, "BUSY");
+            await p;
+            assert.equal(locks.held.size, 0);
+        });
+
+        it("degradación segura: sin locks, o si request lanza, se opera como antes", async () => {
+            const transport = new MockTransport({ latency: 0, logger: () => {} });
+            const none = tab(null, transport);
+            await none.init();
+            assert.equal((await none.pay({ amount: 5, reference: "ODOO-TABA0001" })).status, "authorized");
+            const broken = tab({ request() { throw new Error("SecurityError"); } }, transport);
+            await broken.init();
+            assert.equal((await broken.pay({ amount: 5, reference: "ODOO-TABB0002" })).status, "authorized");
+            assert.equal(broken.isBusy(), false);
+        });
+    });
 
     it("un callback duplicado o tardío del transporte se ignora", async () => {
         const { s, transport } = await fakeSvc();
