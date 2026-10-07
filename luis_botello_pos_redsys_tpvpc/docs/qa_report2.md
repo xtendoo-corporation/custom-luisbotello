@@ -173,6 +173,30 @@ el retorno tardío), o publicarlo en un cerrojo/registro compartido.
 * **QA2-17** Sin restricción única en BD para (`método`, `transaction_id`)/RTS: la unicidad es una búsqueda Python y dos sincronizaciones
   concurrentes podrían registrar el mismo pedido Redsys. No se ha probado concurrencia. Arreglo: índice único parcial en `_auto_init`.
 
+## 4.bis Estado tras las correcciones (ronda 3)
+
+Ver DECISIONS.md, sección "Correcciones QA ronda 3". Los hallazgos de arriba se conservan tal como se redactaron.
+
+| ID | Estado |
+|---|---|
+| QA2-01 | CORREGIDO (cliente y servidor; sin tour en navegador) |
+| QA2-02 | CORREGIDO (cliente; sin tour en navegador) |
+| QA2-03 | CORREGIDO (se bloquea el cierre) |
+| QA2-04 | CORREGIDO (RPC redsys_release_unknown, probado con sync_from_ui real) |
+| QA2-10 | CORREGIDO (ORM; la cascada SQL queda como límite documentado) |
+| QA2-05 | PARCIAL (borrable en borrador; en pedido pagado solo aviso en el wizard) |
+| QA2-06 | CORREGIDO |
+| QA2-09 | CORREGIDO |
+| QA2-11 | CORREGIDO (comportamiento real de la DLL sin verificar) |
+| QA2-12 | CORREGIDO en la misma pestaña/instancia (cerrar la pestaña libera el cerrojo; sin DLL real) |
+| QA2-13 | CORREGIDO |
+| QA2-14 | CORREGIDO |
+| QA2-15 | CORREGIDO |
+| QA2-16 | CORREGIDO |
+| QA2-17 | CORREGIDO (índices únicos parciales; concurrencia real sin probar) |
+
+Pendiente en todos los casos: un tour en navegador y las comprobaciones con hardware de §7.
+
 ## 5. Secretos, PAN, localStorage, Web Locks y BroadcastChannel (punto 3 del encargo)
 
 * **localStorage**: único uso en `redsys_tpvpc_service.js:64` (inyectado a `makeStartMarks`, `redsys_pos_logic.js:227-269`). Claves
