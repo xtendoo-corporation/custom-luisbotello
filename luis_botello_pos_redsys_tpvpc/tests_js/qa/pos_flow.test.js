@@ -159,6 +159,22 @@ describe("Recarga a mitad (recoverOrder)", () => {
         assert.ok(line.transaction_id && line.redsys_rts);
     });
 
+    it("J11: la recuperación rellena redsys_xml con la operación de la consulta (el servidor la valida)", async () => {
+        const { addLine, transport, svc, order } = await fresh();
+        transport.seedOperation({ cents: 1234, factura: "ODOO-A1B2C3D1" });
+        const line = inFlight(addLine);
+        await svc.recoverOrder(order, { silent: true });
+        assert.equal(line.redsys_state, "authorized");
+        assert.match(line.redsys_xml, /^<operacion>/);
+        assert.match(line.redsys_xml, /<estado>F<\/estado>/);
+        assert.match(line.redsys_xml, /<resultado>AUTORIZADA<\/resultado>/);
+        assert.match(line.redsys_xml, /<importe>12\.34<\/importe>/);
+        assert.ok(line.redsys_xml.includes(`<pedido>${line.transaction_id}</pedido>`));
+        assert.ok(line.redsys_xml.includes(`<identificadorRTS>${line.redsys_rts}</identificadorRTS>`));
+        assert.ok(line.redsys_xml.includes("<factura>ODOO-A1B2C3D1</factura>"));
+        assert.match(line.redsys_xml, /<firma>MOCK[0-9A-F]{36}<\/firma>/);
+    });
+
     it("importe distinto en Redsys: unknown + force_done (revisión humana), no done", async () => {
         const { addLine, transport, svc, order } = await fresh();
         transport.seedOperation({ cents: 100, factura: "ODOO-A1B2C3D1" });

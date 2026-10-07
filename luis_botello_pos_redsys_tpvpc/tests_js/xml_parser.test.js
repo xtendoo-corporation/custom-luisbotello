@@ -74,3 +74,14 @@ test("errors: retornos §4.9 en español", () => {
     assert.match(describeReturn("fnDllOperComContable", -12), /interno/);
     assert.match(describeReturn("fnDllOperPinPad", -777), /777/);
 });
+
+test("parseQueryXml: rawXml de cada operación (J11) con la firma de la consulta", () => {
+    const q = parseQueryXml(QUERY_XML([{ factura: "A", pedido: "1" }, { factura: "B", pedido: "2" }], 1));
+    assert.equal(q.operations.length, 2);
+    for (const [i, op] of q.operations.entries()) {
+        assert.match(op.rawXml, /^<operacion>[\s\S]*<\/operacion>$/);
+        assert.equal((op.rawXml.match(/<operacion>/g) || []).length, 1);
+        assert.ok(op.rawXml.includes(`<factura>${["A", "B"][i]}</factura>`));
+        assert.ok(op.rawXml.includes(`<pedido>${i + 1}</pedido>`));
+    }
+});

@@ -635,7 +635,7 @@ export class RedsysService {
                 maskedPan: op.maskedPan,
                 last4: op.last4,
                 date: op.fecha,
-                rawXml: null,
+                rawXml: op.rawXml || null, // XML de la operación según la consulta (el servidor lo valida)
                 recovered: true,
                 userMessage: `La ${verb} se había realizado correctamente (recuperada por consulta).`,
             };

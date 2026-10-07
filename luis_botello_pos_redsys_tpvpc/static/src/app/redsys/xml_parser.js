@@ -157,6 +157,9 @@ export function parseQueryXml(xml) {
         return out;
     }
     out.error = parseErrorXml(xml);
+    // La firma de la consulta cuelga de <resultadoConsulta>, no de <operacion>: se copia al XML de cada
+    // operación para que el servidor vea la misma marca (p. ej. MOCK del simulador).
+    const signature = extractTag(xml, "firma");
     for (const block of extractBlocks(xml, "operacion")) {
         const masked = extractTag(block, "tarjeta");
         out.operations.push({
@@ -171,6 +174,9 @@ export function parseQueryXml(xml) {
             maskedPan: masked,
             last4: last4(masked),
             codigoRespuesta: extractTag(block, "codigoRespuesta"),
+            // XML de la operación tal como la devolvió la consulta: es lo que guarda la recuperación en
+            // redsys_xml (el servidor lo valida igual que el XML de un cobro normal).
+            rawXml: `<operacion>${block}${signature ? `<firma>${signature}</firma>` : ""}</operacion>`,
         });
     }
     out.page = Number(extractTag(xml, "numpagina")) || 0;

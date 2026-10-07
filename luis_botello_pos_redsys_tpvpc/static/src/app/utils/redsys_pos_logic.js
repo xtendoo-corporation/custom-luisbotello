@@ -155,7 +155,7 @@ export function interpretQuery(
             cardBrand: null,
             last4: op.last4,
             date: op.fecha,
-            rawXml: null,
+            rawXml: op.rawXml || null, // XML de la operación en la consulta; sin él el servidor rechazaría la línea
             recovered: true,
         };
         const mismatch = op.importe && amount !== undefined && money(op.importe) !== money(Math.abs(amount));
