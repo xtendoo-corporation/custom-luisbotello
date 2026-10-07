@@ -90,8 +90,9 @@ test("-2 + cobrado: recupera por consulta ±10 min por referencia", async () => 
     assert.equal(r.rts, "RTSX");
     const q = transport.calls.find((c) => c.command === "fnDllOperConsulta").args;
     assert.equal(q[2], REF);
-    assert.equal(q[3], "20261007 095000"); // t0 - 10 min (UTC en el entorno de test)
-    assert.equal(q[4], "20261007 101000");
+    const t0 = Date.UTC(2026, 9, 7, 10, 0, 0);
+    assert.equal(q[3], formatRedsysDate(new Date(t0 - 600000))); // t0 - 10 min
+    assert.equal(q[4], formatRedsysDate(new Date(t0 + 600000))); // t0 + 10 min
     assert.equal(q[5], "PAGO");
     assert.equal(transport.count("fnDllOperPinPad"), 1); // ningún reintento ciego
 });
