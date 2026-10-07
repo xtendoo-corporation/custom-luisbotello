@@ -233,9 +233,11 @@ Tras cada corrección: quitar la marca `todo` del test JS correspondiente (o inv
 | QA-16 | CORREGIDO | campo `redsys_signature_key` solo `group_pos_manager`; RPC con sudo. Test `test_qa_16_*` |
 | QA-17 | CORREGIDO | RPC exige sesión abierta del usuario en esa config (managers: cualquier config con sesión abierta). Test `test_qa_17_*` |
 | QA-19 | CORREGIDO | writes idempotentes; solo cambios reales bloquean. Tests `test_qa_19_*` |
-| QA-20 | CORREGIDO (parcial) | validación XML/importe/pedido/RTS/comercio/terminal y unicidad; no se verifica `firma` ni marca MOCK (QA-10 servidor) |
+| QA-20 | CORREGIDO (parcial) | validación XML/importe/pedido/RTS/comercio/terminal y unicidad, para XML de pago y de consulta (recuperación, J11); no se verifica la firma criptográfica |
+| QA-10 (servidor) | CORREGIDO | rechaza `<firma>MOCK…` si el método no tiene `redsys_simulation`. Test `test_qa_10_server_*` |
+| J11 conflicto | CORREGIDO | recuperación guarda el `<operacion>` de la consulta en `redsys_xml` y el servidor lo acepta. Tests `test_qa_20_recovered_by_query_xml_*` + JS `pos_flow` |
 | QA-21 | CORREGIDO (parcial) | vista/filtro/wizard de conciliación auditada; falta aviso al cerrar sesión (cliente) |
-| QA-18 | ABIERTO | `unknown -> False` sigue permitido (lo usa el cliente) |
+| QA-18 | DECIDIDO (no se unifica) | `unknown -> False` = liberación del cajero tras denegación cierta/confirmación; `not_charged` queda para la conciliación auditada del manager (DECISIONS) |
 
 Los tests `test_qa_known_issue_*` Python se reescribieron para afirmar el comportamiento correcto. Ver DECISIONS.md "Correcciones QA backend".
 
@@ -246,7 +248,8 @@ Los tests `test_qa_known_issue_*` Python se reescribieron para afirmar el compor
 | QA-01 | Estado: corregido en ae3a691 | gracia 2 min desde el inicio del cobro + checkStatus 0 + confirmación del cajero (`releaseLine`); reconsulta automática |
 | QA-02 | Estado: corregido en ae3a691 | `-98`/timeout local => `unknown`; `isBusy` sigue ocupado hasta retorno tardío/`orphanMs` |
 | QA-04 | Estado: corregido en ae3a691 | `_recover` coteja importe (`AMOUNT_MISMATCH`) |
-| QA-10 | Estado: corregido en ae3a691 (parcial) | firma `MOCK...` en el XML simulado; falta rechazo en servidor (QA-20) e insignia fija |
+| QA-10 | Estado: corregido (parcial) | firma `MOCK...` en el XML simulado; rechazo en servidor hecho (§8); falta insignia fija |
+| J11 recuperación | Estado: corregido | `redsys_xml` = `<operacion>` de la consulta (+ firma) en vez de vacío; el servidor valida ambos formatos |
 | QA-14 | Estado: corregido en ae3a691 | contador de bloqueos en `recoverOrder` |
 | QA-15 | Estado: corregido en ae3a691 | `recoverLine` salta líneas con cobro en curso |
 | QA-11 | Estado: corregido en ea86d95 | `_run` no reenvía unknown/authorized/refund |
