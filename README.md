@@ -24,6 +24,7 @@ desarrollados por **Xtendoo**.
 | `luis_botello_extend_pos_conventional` | 19.0.1.0.0 | TPV | Extensiones de recibo, cierre, URL por caja y botón Devolver |
 | `luis_botello_stock_report` | 19.0.1.0.0 | Inventario | Informe consolidado de stock por almacén (vista SQL) |
 | `luis_botello_informes_tablero` | 19.0.1.0.0 | TPV / Reporting | Informes diarios y horarios de TPV en Tableros y Spreadsheet |
+| `luis_botello_pos_redsys_tpvpc` | 19.0.1.0.0 | TPV / Pagos | Cobro con datáfono Verifone P400 (Redsys TPV-PC) en el POS, con recuperación de cobros dudosos y devoluciones; probado solo con simulador |
 
 ---
 
@@ -168,6 +169,7 @@ odoo --stop-after-init \
 | `luis_botello_extend_pos_conventional` | Sin tests | ⚠️ Sin cobertura; riesgo `_can_access_pos_config` | — |
 | `luis_botello_stock_report` | Sin tests | ⚠️ Sin cobertura | — |
 | `luis_botello_informes_tablero` | 4 tests | ✓ Cubre acciones, SQL y dashboards | `--test-tags luis_botello_informes_tablero` |
+| `luis_botello_pos_redsys_tpvpc` | 37 tests Python + 211 JS (8 `todo`) | ✓ Verde contra el simulador; ⚠️ sin hardware ni tour de navegador | Python: `-i luis_botello_pos_redsys_tpvpc --test-tags /luis_botello_pos_redsys_tpvpc`; JS: `node --test tests_js/` en el módulo |
 
 **Cobertura global estimada:** baja — 3 de 9 módulos tienen tests ejecutables.
 
