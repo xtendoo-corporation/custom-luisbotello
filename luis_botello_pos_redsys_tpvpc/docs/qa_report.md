@@ -225,3 +225,16 @@ toda operación (y durante la recuperación) o `BroadcastChannel` con un registr
 5. BAJOS en un único pase de endurecimiento.
 
 Tras cada corrección: quitar la marca `todo` del test JS correspondiente (o invertir la aserción del `test_qa_known_issue_*`).
+
+## 8. Estado de correcciones backend (Python)
+
+| ID | Estado | Nota |
+|---|---|---|
+| QA-16 | CORREGIDO | campo `redsys_signature_key` solo `group_pos_manager`; RPC con sudo. Test `test_qa_16_*` |
+| QA-17 | CORREGIDO | RPC exige sesión abierta del usuario en esa config (managers: cualquier config con sesión abierta). Test `test_qa_17_*` |
+| QA-19 | CORREGIDO | writes idempotentes; solo cambios reales bloquean. Tests `test_qa_19_*` |
+| QA-20 | CORREGIDO (parcial) | validación XML/importe/pedido/RTS/comercio/terminal y unicidad; no se verifica `firma` ni marca MOCK (QA-10 servidor) |
+| QA-21 | CORREGIDO (parcial) | vista/filtro/wizard de conciliación auditada; falta aviso al cerrar sesión (cliente) |
+| QA-18 | ABIERTO | `unknown -> False` sigue permitido (lo usa el cliente) |
+
+Los tests `test_qa_known_issue_*` Python se reescribieron para afirmar el comportamiento correcto. Ver DECISIONS.md "Correcciones QA backend".
