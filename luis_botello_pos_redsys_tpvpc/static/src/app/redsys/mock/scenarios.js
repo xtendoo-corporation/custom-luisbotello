@@ -184,7 +184,10 @@ export function escapeXml(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Hash falso de 40 hex, determinista. NO es una firma Redsys y no usa la clave. */
+/**
+ * Hash falso de 40 caracteres, determinista, con prefijo "MOCK" (QA-10: marca inequívoca de operación
+ * simulada en el XML que se guarda en BD). NO es una firma Redsys y no usa la clave.
+ */
 export function fakeSignature(seed) {
     let h = 0x811c9dc5;
     let out = "";
@@ -194,7 +197,7 @@ export function fakeSignature(seed) {
         h = Math.imul(h, 0x01000193) >>> 0;
         out += h.toString(16).padStart(8, "0");
     }
-    return out.slice(0, 40).toUpperCase();
+    return ("MOCK" + out.slice(0, 36)).toUpperCase();
 }
 
 const maskedPan = (last4) => `************${last4}`;

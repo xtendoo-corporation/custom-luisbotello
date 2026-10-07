@@ -5,6 +5,7 @@ import { patch } from "@web/core/utils/patch";
 import { onMounted } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import {
+    canDeleteRedsysLine,
     canRefundRedsysLine,
     isRedsysMethod,
     previousRefunds,
@@ -25,6 +26,24 @@ patch(PaymentScreen.prototype, {
 
     _redsysAlert(title, body) {
         this.dialog.add(AlertDialog, { title, body });
+    },
+
+    /**
+     * QA-23: una línea Redsys dudosa (unknown), autorizada, forzada o con operación en curso NO se borra desde
+     * la UI: el core hace `removePaymentline` directo en force_done/retry y el cajero cobraría de nuevo.
+     */
+    deletePaymentLine(uuid) {
+        const line = this.paymentLines.find((l) => l.uuid === uuid);
+        if (line && isRedsysMethod(line.payment_method_id)) {
+            const check = canDeleteRedsysLine(line, {
+                operationActive: this.redsys.isLineActive(uuid),
+            });
+            if (!check.ok) {
+                this._redsysAlert("Redsys: no se puede eliminar", check.reason);
+                return;
+            }
+        }
+        return super.deletePaymentLine(...arguments);
     },
 
     async addNewPaymentLine(paymentMethod) {
@@ -120,6 +139,22 @@ patch(PaymentScreen.prototype, {
         if (outcome.outcome === "authorized") {
             this._redsysAlert("Redsys", outcome.message);
             return super.sendForceDone(line);
+        }
+        if (outcome.outcome === "not_charged" && outcome.needsConfirmation) {
+            // QA-01: una consulta vacía no basta: lo confirma el cajero tras comprobarlo.
+            this.dialog.add(ConfirmationDialog, {
+                title: "Redsys: no consta cobro",
+                body:
+                    `${outcome.message}\n\nConfirme solo si ha comprobado en el datáfono o en el portal de Redsys ` +
+                    "que NO se ha cobrado. Si duda, no confirme.",
+                confirmLabel: "No se cobró: permitir reintentar",
+                cancelLabel: "Mantener bloqueada",
+                confirm: () => {
+                    service.releaseLine(line);
+                },
+                cancel: () => {},
+            });
+            return;
         }
         if (outcome.outcome === "not_charged") {
             this._redsysAlert("Redsys", outcome.message);

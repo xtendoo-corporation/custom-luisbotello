@@ -13,7 +13,9 @@ import { loadJS } from "@web/core/assets";
 import { createRedsysEntry } from "../utils/redsys_factory.js";
 import {
     POLL_INTERVAL_MS,
+    RECOVERY_GRACE_MS,
     interpretQuery,
+    makeStartMarks,
     isRedsysMethod,
     needsRecovery,
     recoveryWindow,
@@ -51,6 +53,20 @@ export const redsysTpvpcService = {
         let keysPromise = null; // {method_id: clave}; SOLO memoria
         let pollTimer = null;
         const recovering = new Map(); // line.uuid -> Promise
+        const activeLines = new Set(); // líneas con un cobro EN CURSO en esta pestaña (QA-15)
+        const retryTimers = new Map(); // line.uuid -> {timer, n}: reconsultas durante la gracia (QA-01)
+        const config = { graceMs: RECOVERY_GRACE_MS, maxRetries: 8 };
+        let blockCount = 0; // QA-14: bloqueos solapados de paymentTerminalInProgress
+        let blockSaved = false;
+        const marks = makeStartMarks(
+            (() => {
+                try {
+                    return window.localStorage || null;
+                } catch {
+                    return null;
+                }
+            })()
+        );
         const state = reactive({ statuses: {}, recoveringCount: 0 });
 
         const alert = (title, body) => pos.dialog.add(AlertDialog, { title, body });
@@ -162,7 +178,10 @@ export const redsysTpvpcService = {
 
         /**
          * Consulta a Redsys una línea a medias por su referencia y la resuelve.
-         * @returns {Promise<{outcome:'authorized'|'not_charged'|'unknown'|'skipped', message?:string}>}
+         * Una consulta vacía NO prueba "no cobrado" (QA-01): hace falta que pase la gracia desde el inicio
+         * del cobro y que el datáfono esté sano, y el paso a 'retry' lo confirma el cajero (releaseLine),
+         * salvo denegación registrada por Redsys.
+         * @returns {Promise<{outcome:'authorized'|'not_charged'|'unknown'|'skipped', message?:string, needsConfirmation?:boolean}>}
          */
         function recoverLine(line) {
             if (recovering.has(line.uuid)) {
@@ -172,7 +191,15 @@ export const redsysTpvpcService = {
                 if (!needsRecovery(line)) {
                     return { outcome: "skipped" };
                 }
+                // QA-15: una línea con cobro en curso en esta pestaña NO es una huérfana: no se toca.
+                if (activeLines.has(line.uuid)) {
+                    return { outcome: "skipped", message: "Operación en curso." };
+                }
                 const method = lineMethod(line);
+                const known = entries.get(method.id);
+                if (known && known.redsys.isBusy()) {
+                    return { outcome: "skipped", message: "El datáfono está ocupado." };
+                }
                 const reference = line.redsys_reference || line.payment_ref_no;
                 const isRefund = line.getAmount() < 0;
                 const ready = await ensureReady(method);
@@ -180,40 +207,103 @@ export const redsysTpvpcService = {
                 if (!ready.ok) {
                     outcome = { outcome: "unknown", message: ready.message };
                 } else {
+                    const redsys = ready.entry.redsys;
                     const { from, to } = recoveryWindow(line.payment_date);
-                    const q = await ready.entry.redsys.query({
+                    const q = await redsys.query({
                         reference,
                         from,
                         to,
                         type: isRefund ? "DEVOLUCION" : "PAGO",
                     });
-                    outcome = interpretQuery(q, { reference, amount: line.getAmount(), isRefund });
+                    const opts = {
+                        reference,
+                        amount: line.getAmount(),
+                        isRefund,
+                        startedAt: marks.getOrStart(reference),
+                        now: Date.now(),
+                        graceMs: config.graceMs,
+                    };
+                    outcome = interpretQuery(q, opts);
+                    if (outcome.outcome === "not_charged" && !outcome.certain) {
+                        // "El datáfono ya no está procesando": checkStatus sano (QA-01).
+                        let deviceFree = false;
+                        try {
+                            deviceFree = (await redsys.checkStatus()).code === 0;
+                        } catch {
+                            deviceFree = false;
+                        }
+                        outcome = interpretQuery(q, { ...opts, deviceFree });
+                    }
                 }
-                applyRecovery(line, outcome);
-                return { outcome: outcome.outcome, message: outcome.message };
+                return applyRecovery(line, outcome);
             })().finally(() => recovering.delete(line.uuid));
             recovering.set(line.uuid, p);
             return p;
         }
 
+        function scheduleRetry(line, outcome) {
+            const cur = retryTimers.get(line.uuid) || { timer: null, n: 0 };
+            if (cur.timer) {
+                clearTimeout(cur.timer);
+            }
+            if (cur.n >= config.maxRetries) {
+                return;
+            }
+            cur.n += 1;
+            cur.timer = setTimeout(() => {
+                recoverLine(line).catch(() => {});
+            }, outcome.retryInMs || 30000);
+            if (cur.timer && cur.timer.unref) {
+                cur.timer.unref();
+            }
+            retryTimers.set(line.uuid, cur);
+        }
+
         function applyRecovery(line, outcome) {
+            const reference = line.redsys_reference || line.payment_ref_no;
             if (outcome.outcome === "authorized") {
                 Object.assign(line, outcome.vals);
                 line.setReceiptInfo(outcome.receipt);
                 line.setPaymentStatus("done");
-            } else if (outcome.outcome === "not_charged") {
+                marks.clear(reference);
+                return { outcome: "authorized", message: outcome.message };
+            }
+            if (outcome.outcome === "not_charged" && outcome.certain) {
                 line.redsys_state = false;
                 line.setPaymentStatus("retry");
-            } else {
-                if (outcome.result) {
-                    Object.assign(line, {
-                        transaction_id: outcome.result.pedido || "",
-                        redsys_rts: outcome.result.rts || "",
-                    });
-                }
-                line.redsys_state = "unknown";
-                line.setPaymentStatus("force_done");
+                marks.clear(reference);
+                return { outcome: "not_charged", message: outcome.message, certain: true };
             }
+            // Resto (incluido "no consta cobro" sin confirmar): la línea queda bloqueada hasta que alguien decida.
+            if (outcome.result) {
+                Object.assign(line, {
+                    transaction_id: outcome.result.pedido || "",
+                    redsys_rts: outcome.result.rts || "",
+                });
+            }
+            line.redsys_state = "unknown";
+            line.setPaymentStatus("force_done");
+            if (outcome.waiting) {
+                scheduleRetry(line, outcome);
+            }
+            if (outcome.outcome === "not_charged") {
+                return { outcome: "not_charged", message: outcome.message, needsConfirmation: true };
+            }
+            return { outcome: outcome.outcome, message: outcome.message };
+        }
+
+        /**
+         * Tras la CONFIRMACIÓN explícita del cajero de que no hay cobro (diálogo de Forzar): libera la línea
+         * para reintentar. Solo si no hay operación en curso con ella.
+         */
+        function releaseLine(line) {
+            if (activeLines.has(line.uuid)) {
+                return false;
+            }
+            line.redsys_state = false;
+            line.setPaymentStatus("retry");
+            marks.clear(line.redsys_reference || line.payment_ref_no);
+            return true;
         }
 
         /** Resuelve todas las líneas a medias de un pedido (o de todos si no se indica). */
@@ -224,7 +314,9 @@ export const redsysTpvpcService = {
                 return [];
             }
             state.recoveringCount += lines.length;
-            const hadBlock = pos.paymentTerminalInProgress;
+            if (blockCount++ === 0) {
+                blockSaved = pos.paymentTerminalInProgress; // QA-14: un único dueño del valor previo
+            }
             pos.paymentTerminalInProgress = true; // nada de cobros hasta saber qué pasó
             const results = [];
             try {
@@ -233,7 +325,9 @@ export const redsysTpvpcService = {
                 }
             } finally {
                 state.recoveringCount -= lines.length;
-                pos.paymentTerminalInProgress = hadBlock;
+                if (--blockCount === 0) {
+                    pos.paymentTerminalInProgress = blockSaved;
+                }
             }
             if (!silent) {
                 const msgs = results
@@ -278,7 +372,14 @@ export const redsysTpvpcService = {
             getEntry,
             checkNow,
             recoverLine,
+            releaseLine,
             recoverOrder,
+            config,
+            markStart: (reference) => marks.set(reference),
+            clearStart: (reference) => marks.clear(reference),
+            beginLine: (uuid) => activeLines.add(uuid),
+            endLine: (uuid) => activeLines.delete(uuid),
+            isLineActive: (uuid) => activeLines.has(uuid),
             unresolved,
             isOperationActive(method) {
                 const entry = entries.get(method.id);

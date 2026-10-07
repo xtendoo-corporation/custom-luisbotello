@@ -2,6 +2,8 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
 from odoo.addons.point_of_sale.tests.common import TestPoSCommon
 
+from .redsys_xml import redsys_xml
+
 
 @tagged("post_install", "-at_install")
 class TestRedsysBackend(TestPoSCommon):
@@ -77,6 +79,8 @@ class TestRedsysBackend(TestPoSCommon):
 
     def test_get_signature_key_only_own_config(self):
         other = self._create_method("3")  # no asignado a la config
+        self.open_new_session()
+        self.pos_session.user_id = self.pos_user
         Method = self.env["pos.payment.method"].with_user(self.pos_user)
         keys = Method.redsys_get_signature_key(self.config.id)
         self.assertEqual(keys, {self.method.id: "SECRET-KEY"})
@@ -126,7 +130,7 @@ class TestRedsysBackend(TestPoSCommon):
                 "redsys_state": state,
                 "redsys_reference": "ODOO-ABCD1234",
                 "redsys_rts": "RTS1",
-                "redsys_xml": "<xml/>",
+                "redsys_xml": redsys_xml(10, rts="RTS1"),
             }
         )
 
@@ -148,6 +152,9 @@ class TestRedsysBackend(TestPoSCommon):
                 "amount": -4,
                 "transaction_id": "123456789013",
                 "redsys_state": "refund",
+                "redsys_rts": "RTS2",
+                "redsys_xml": redsys_xml(-4, pedido="123456789013", rts="RTS2", factura="R-1"),
+                "redsys_reference": "R-1",
                 "redsys_original_pedido": "123456789012",
             }
         )
@@ -179,3 +186,83 @@ class TestRedsysBackend(TestPoSCommon):
         payment = self._make_payment(state=False)
         payment.unlink()
         self.assertFalse(payment.exists())
+
+    # ------------------------------------------------------------ QA backend
+
+    def test_key_rpc_requires_open_session_of_the_user(self):
+        Method = self.env["pos.payment.method"].with_user(self.pos_user)
+        with self.assertRaises(AccessError):  # sin sesión abierta
+            Method.redsys_get_signature_key(self.config.id)
+        self.open_new_session()
+        with self.assertRaises(AccessError):  # sesión abierta por otro usuario
+            Method.redsys_get_signature_key(self.config.id)
+        self.pos_session.user_id = self.pos_user
+        self.assertEqual(
+            Method.redsys_get_signature_key(self.config.id),
+            {self.method.id: "SECRET-KEY"},
+        )
+        # un manager puede pedirla con sesión abierta
+        keys = self.env["pos.payment.method"].with_user(
+            self.pos_manager
+        ).redsys_get_signature_key(self.config.id)
+        self.assertEqual(keys, {self.method.id: "SECRET-KEY"})
+
+    def test_key_field_only_readable_by_manager(self):
+        Method = self.env["pos.payment.method"]
+        with self.assertRaises(AccessError):
+            Method.with_user(self.pos_user).browse(self.method.id).redsys_signature_key
+        self.assertEqual(
+            Method.with_user(self.pos_manager).browse(self.method.id).redsys_signature_key,
+            "SECRET-KEY",
+        )
+
+    def test_reconcile_unknown_payment(self):
+        payment = self._make_payment("unknown")
+        with self.assertRaises(AccessError):
+            payment.with_user(self.pos_user).redsys_reconcile("charged", "x")
+        with self.assertRaises(UserError):  # nota obligatoria
+            payment.with_user(self.pos_manager).redsys_reconcile("charged", " ")
+        payment.with_user(self.pos_manager).redsys_reconcile("not_charged", "Portal: sin cargo")
+        self.assertEqual(payment.redsys_state, "not_charged")
+        self.assertEqual(payment.redsys_resolved_by_id, self.pos_manager)
+        self.assertTrue(payment.redsys_resolved_date)
+        self.assertEqual(payment.redsys_resolution_note, "Portal: sin cargo")
+        with self.assertRaises(UserError):  # ya conciliada, protegida
+            payment.unlink()
+        with self.assertRaises(UserError):
+            payment.with_user(self.pos_manager).redsys_reconcile("charged", "otra vez")
+
+    def test_reconcile_charged_and_wizard(self):
+        payment = self._make_payment("unknown")
+        wizard = (
+            self.env["pos.payment.redsys.reconcile"]
+            .with_user(self.pos_manager)
+            .with_context(active_model="pos.payment", active_ids=payment.ids)
+            .create({"resolution": "charged", "note": "Portal OK", "payment_ids": [(6, 0, payment.ids)]})
+        )
+        wizard.action_reconcile()
+        self.assertEqual(payment.redsys_state, "authorized")
+        self.assertEqual(payment.redsys_resolved_by_id, self.pos_manager)
+
+    def test_cashier_cannot_fake_reconciliation(self):
+        payment = self._make_payment("unknown")
+        for vals in (
+            {"redsys_state": "not_charged"},
+            {"redsys_resolution_note": "mine"},
+            {"redsys_resolved_by_id": self.pos_user.id},
+        ):
+            with self.assertRaises(UserError):
+                payment.with_user(self.pos_user).write(vals)
+        # el contexto de bypass enviado por RPC (sin sudo) no desbloquea
+        with self.assertRaises(UserError):
+            payment.with_user(self.pos_user).with_context(redsys_force_unlink=True).unlink()
+
+    def test_reconcile_unknown_view_exists(self):
+        action = self.env.ref("luis_botello_pos_redsys_tpvpc.action_pos_payment_redsys_unknown")
+        self.assertEqual(action.res_model, "pos.payment")
+        self.assertIn("redsys_unknown", action.context)
+        self.assertTrue(
+            self.env["ir.ui.view"].search(
+                [("model", "=", "pos.payment"), ("arch_db", "ilike", "redsys_state")]
+            )
+        )

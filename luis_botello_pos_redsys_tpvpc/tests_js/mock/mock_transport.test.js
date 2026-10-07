@@ -76,7 +76,7 @@ describe("pago autorizado", () => {
         assert.match(tag(r.Result, "identificadorRTS"), /^\d{24}$/);
         assert.match(tag(r.Result, "tarjetaClienteRecibo"), /^\*{12}\d{4}$/);
         assert.match(tag(r.Result, "fechaOperacion"), /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}$/);
-        assert.match(tag(r.Result, "firma"), /^[0-9A-F]{40}$/);
+        assert.match(tag(r.Result, "firma"), /^MOCK[0-9A-F]{36}$/);
         assert.ok(!r.Result.includes(KEY));
     });
 

@@ -21,6 +21,7 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         super.setup(...arguments);
         this.supports_reversals = false; // las devoluciones se hacen en pedidos de devolución
         this._liveStatus = "waiting";
+        this._inflight = new Map(); // line.uuid -> Promise de la operación en curso (QA-13)
     }
 
     get service() {
@@ -51,8 +52,14 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         if (!refundedOrder) {
             return null;
         }
-        const orig = refundedOrder.payment_ids.find((p) => canRefundRedsysLine(p).ok);
-        return orig ? refundInfoFromOriginal(orig) : null;
+        const candidates = refundedOrder.payment_ids.filter((p) => canRefundRedsysLine(p).ok);
+        // QA-24: se devuelve a la MISMA tarjeta/línea original que se eligió (pedido persistido en la línea).
+        if (line.redsys_original_pedido) {
+            const orig = candidates.find((p) => String(p.transaction_id) === String(line.redsys_original_pedido));
+            return orig ? refundInfoFromOriginal(orig) : null;
+        }
+        // Sin elección persistida: solo es inequívoco si hay una única tarjeta Redsys válida.
+        return candidates.length === 1 ? refundInfoFromOriginal(candidates[0]) : null;
     }
 
     /** Suma ya devuelta contra el mismo pedido original (excluye la propia línea). */
@@ -66,6 +73,25 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
     }
 
     async sendPaymentRequest(uuid) {
+        // QA-13: doble clic / reenvío mientras el cobro de ESTA línea sigue en curso: es idempotente, devuelve
+        // la misma promesa y no toca el estado (si no, la línea quedaría en 'retry' con el cobro vivo).
+        if (this._inflight.has(uuid)) {
+            const dup = this._getLine(uuid);
+            if (dup) {
+                dup.setPaymentStatus(this._liveStatus);
+            }
+            return this._inflight.get(uuid);
+        }
+        const promise = this._sendPaymentRequest(uuid);
+        this._inflight.set(uuid, promise);
+        try {
+            return await promise;
+        } finally {
+            this._inflight.delete(uuid);
+        }
+    }
+
+    async _sendPaymentRequest(uuid) {
         await super.sendPaymentRequest(uuid);
         const line = this._getLine(uuid);
         if (!line) {
@@ -89,6 +115,20 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
     async _run(line) {
         const service = this.service;
         const order = line.pos_order_id;
+        // QA-11: una línea ya autorizada/devuelta no se vuelve a cobrar; una dudosa no se reenvía.
+        if (line.redsys_state === "authorized" || line.redsys_state === "refund") {
+            this.pos.notification.add("Esta operación ya figura como realizada en Redsys.", { type: "info" });
+            return true;
+        }
+        if (line.redsys_state === "unknown") {
+            this._alert(
+                "Redsys: operación pendiente",
+                "Esta línea tiene un cobro con resultado sin resolver (referencia " +
+                    `${line.redsys_reference || line.payment_ref_no || "?"}). No se reenvía al datáfono: ` +
+                    "resuélvala con Forzar tras verificar en el portal de Redsys."
+            );
+            return false;
+        }
         const blocking = unresolvedLines(order.payment_ids, line.uuid);
         if (blocking.length) {
             this._alert(
@@ -135,6 +175,8 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         }
         const redsys = ready.entry.redsys;
         this._liveStatus = "waiting";
+        service.markStart(reference); // QA-01: inicio del cobro, base de la gracia tras una recarga
+        service.beginLine(line.uuid); // QA-15: cobro en curso en esta pestaña
         const off = [
             redsys.on("cardReading", () => {
                 this._liveStatus = "waitingCard";
@@ -153,8 +195,12 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
                 : await redsys.pay({ amount, reference });
         } finally {
             off.forEach((fn) => fn());
+            service.endLine(line.uuid);
         }
         const decision = interpretPayResult(result, { isRefund, originalPedido: info && info.pedido });
+        if (decision.outcome !== "unknown") {
+            service.clearStart(reference); // resultado definitivo: ya no hace falta la gracia
+        }
         Object.assign(line, decision.vals);
         if (decision.outcome === "done") {
             line.setReceiptInfo(decision.receipt);

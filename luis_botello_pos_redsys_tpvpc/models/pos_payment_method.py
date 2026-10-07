@@ -22,9 +22,10 @@ class PosPaymentMethod(models.Model):
     redsys_signature_key = fields.Char(
         string="Redsys signature key",
         copy=False,
-        groups="point_of_sale.group_pos_user",
-        help="Clave de firma del comercio. Solo se entrega al POS mediante "
-        "redsys_get_signature_key, para el método de la caja activa.",
+        groups="point_of_sale.group_pos_manager",
+        help="Clave de firma del comercio. Solo legible por administradores del "
+        "POS; el POS la recibe mediante redsys_get_signature_key (sudo), solo "
+        "para el método de la caja con sesión abierta del usuario.",
     )
     redsys_com_port = fields.Char(
         string="Redsys COM port", default="COM9:,19200,N,8,1"
@@ -61,14 +62,30 @@ class PosPaymentMethod(models.Model):
 
     @api.model
     def redsys_get_signature_key(self, config_id):
-        """Devuelve {payment_method_id: clave} solo de los métodos Redsys de la
-        configuración indicada y solo a usuarios del grupo POS user."""
-        if not self.env.user.has_group("point_of_sale.group_pos_user"):
+        """Devuelve {payment_method_id: clave} de los métodos Redsys de la caja.
+
+        Criterio de acceso (QA-17, DECISIONS D7): usuario del grupo POS user, y la
+        config debe tener una sesión abierta (no cerrada) cuyo responsable sea el
+        propio usuario. Los administradores (group_pos_manager) pueden pedirla
+        para cualquier config con sesión abierta. Sin sesión abierta o de otro
+        usuario: AccessError (sin revelar si la config existe).
+        """
+        user = self.env.user
+        if not user.has_group("point_of_sale.group_pos_user"):
             raise AccessError(_("You are not allowed to use the Redsys terminal."))
         config = self.env["pos.config"].browse(config_id).exists()
         if not config:
             return {}
         config.check_access("read")
+        session = config.current_session_id
+        if not session or session.state == "closed":
+            raise AccessError(_("The point of sale has no open session."))
+        if session.user_id != user and not user.has_group(
+            "point_of_sale.group_pos_manager"
+        ):
+            raise AccessError(
+                _("This point of sale session was not opened by you.")
+            )
         methods = config.payment_method_ids.filtered(
             lambda m: m.use_payment_terminal == "redsys_tpvpc"
         )

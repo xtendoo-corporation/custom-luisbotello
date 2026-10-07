@@ -160,12 +160,53 @@ describe("Recarga a mitad (recoverOrder)", () => {
         assert.equal(line.payment_status, "force_done");
     });
 
-    it("no cobrado: retry sin estado; la consulta falla: unknown/force_done y queda bloqueado", async () => {
-        const { addLine, transport, svc, order } = await fresh();
+    it("QA-01 consulta vacía dentro de la gracia: NO pasa a retry (el cobro puede seguir en el datáfono); se reconsulta sola", async () => {
+        const { addLine, svc, order } = await fresh();
         const a = inFlight(addLine);
-        await svc.recoverOrder(order, { silent: true });
+        const r = await svc.recoverOrder(order, { silent: true });
+        assert.equal(r[0].outcome.outcome, "unknown");
+        assert.equal(a.redsys_state, "unknown");
+        assert.equal(a.payment_status, "force_done", "bloqueada: nada de reintentar");
+    });
+
+    it("QA-01 pasada la gracia y con datáfono sano: 'no consta cobro' pero SOLO el cajero libera la línea (releaseLine)", async () => {
+        const { addLine, svc, order } = await fresh();
+        svc.config.graceMs = 0;
+        const a = inFlight(addLine);
+        const r = await svc.recoverOrder(order, { silent: true });
+        assert.equal(r[0].outcome.outcome, "not_charged");
+        assert.equal(r[0].outcome.needsConfirmation, true);
+        assert.equal(a.payment_status, "force_done", "sin confirmación no se pasa a retry");
+        assert.equal(a.redsys_state, "unknown");
+        assert.equal(svc.releaseLine(a), true);
         assert.equal(a.payment_status, "retry");
         assert.ok(!a.redsys_state);
+    });
+
+    it("QA-01 gracia vencida pero checkStatus falla: sigue sin concluirse 'no cobrado'", async () => {
+        const { addLine, svc, order, transport } = await fresh();
+        svc.config.graceMs = 0;
+        const a = inFlight(addLine);
+        transport.forceNext("check_terminal_fail");
+        const r = await svc.recoverOrder(order, { silent: true });
+        assert.equal(r[0].outcome.outcome, "unknown");
+        assert.equal(a.payment_status, "force_done");
+    });
+
+    it("denegación registrada en Redsys: evidencia cierta, vuelve a retry sin esperar", async () => {
+        const { addLine, transport, svc, order } = await fresh();
+        transport.forceNext({ name: "denied", denialCode: "116" });
+        const d = addLine();
+        assert.equal(await d.pay(), false);
+        d.setPaymentStatus("waitingCard"); // simula una recarga a mitad: el POS la restaura en curso
+        d.redsys_state = false;
+        const r = await svc.recoverOrder(order, { silent: true });
+        assert.equal(r[0].outcome.outcome, "not_charged");
+        assert.equal(d.payment_status, "retry");
+    });
+
+    it("la consulta falla: unknown/force_done y queda bloqueado", async () => {
+        const { addLine, transport, svc, order } = await fresh();
         const b = inFlight(addLine, "ODOO-A1B2C3D2");
         transport.forceNext("unknown_query_fails"); // no aplica a consulta; usamos failConsults directo
         transport._failConsults = 1;

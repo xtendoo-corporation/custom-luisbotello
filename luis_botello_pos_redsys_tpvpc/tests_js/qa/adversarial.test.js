@@ -143,7 +143,7 @@ describe("Secretos: clave de firma y PAN", () => {
         for (const xml of xmls) {
             for (const [, text] of xml.matchAll(/>([0-9*\s]{13,24})</g)) {
                 const digits = text.replace(/\D/g, "");
-                const masked = /^\*{12}\d{4}$/.test(text.trim());
+                const masked = /^\*{12}\d{4}$/.test(text.trim()) || /^\d{8} \d{6}$/.test(text.trim()); // máscara o timestamp "YYYYMMdd HHmmss"
                 if (!masked && digits.length >= 13 && digits.length <= 19) {
                     assert.ok(!luhn(digits), `posible PAN completo en XML: ${text}`);
                 }
@@ -168,9 +168,18 @@ describe("Secretos: clave de firma y PAN", () => {
             [/\beval\s*\(|new\s+Function\s*\(|\.innerHTML\b|\.outerHTML\b|document\.write|insertAdjacentHTML|t-raw|\bmarkup\s*\(/, "inyección HTML/JS"],
             [/\bfetch\s*\(\s*["'`]https?:\/\/(?!localhost)/, "petición a host externo"],
         ];
+        // Única excepción: marcas de inicio de cobro (QA-01), sin secretos: clave "redsys_start:<referencia>" => instante.
+        const storageOk = new Set(["app/services/redsys_tpvpc_service.js"]);
         for (const file of walk(SRC).filter((f) => /\.(js|xml)$/.test(f))) {
             const text = fs.readFileSync(file, "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+            const rel = path.relative(SRC, file).replaceAll(path.sep, "/");
             for (const [re, what] of forbidden) {
+                if (storageOk.has(rel) && what === "almacenamiento del navegador") {
+                    assert.equal((text.match(/localStorage/g) || []).length, 1, "un único acceso, a localStorage");
+                    assert.ok(!/sessionStorage|indexedDB/.test(text));
+                    assert.ok(!/localStorage[\s\S]{0,200}(signKey|keys\b)/.test(text), "la clave no se guarda");
+                    continue;
+                }
                 assert.ok(!re.test(text), `${path.relative(SRC, file)} contiene ${what}`);
             }
         }
@@ -253,13 +262,14 @@ describe("'unknown' nunca es éxito ni fallo", () => {
     });
 
     it("interpretQuery (recarga): sin operación => not_charged es SOLO tan fiable como la consulta; P/ error => unknown", () => {
-        assert.equal(interpretQuery({ operations: [] }, { reference: REF, amount: 5 }).outcome, "not_charged");
+        assert.equal(interpretQuery({ operations: [] }, { reference: REF, amount: 5, startedAt: 0, now: 1e7 }).outcome, "not_charged");
+        assert.equal(interpretQuery({ operations: [] }, { reference: REF, amount: 5 }).outcome, "unknown", "QA-01: sin gracia cumplida no se concluye");
         assert.equal(interpretQuery({ operations: [{ factura: REF, estado: "P" }] }, { reference: REF, amount: 5 }).outcome, "unknown");
         assert.equal(interpretQuery({ error: { message: "x" } }, { reference: REF }).outcome, "unknown");
         assert.equal(interpretQuery(null, { reference: REF }).outcome, "unknown");
     });
 
-    openIt("QA-01 recarga mientras el datáfono AÚN procesa: la consulta no debe concluir 'no cobrado' (cobro huérfano)", async () => {
+    it("QA-01 recarga mientras el datáfono AÚN procesa: la consulta no debe concluir 'no cobrado' (cobro huérfano)", async () => {
         const { s: a, transport } = mockSvc({ latency: { cardRead: 60, process: 10, init: 0, consult: 0 } });
         await a.init();
         const inflight = a.pay({ amount: 12.34, reference: REF }); // la pestaña original se pierde (F5)
@@ -273,9 +283,9 @@ describe("'unknown' nunca es éxito ni fallo", () => {
         await inflight;
         assert.equal(charges(transport).length, 1, "el cobro original terminó autorizado");
         assert.notEqual(outcome.outcome, "not_charged", "se declaró 'no cobrado' y el cargo apareció después => reintento = doble cobro");
-    }, { todo: "QA-01: recoverLine/interpretQuery concluyen not_charged tras UNA consulta vacía, sin esperar el timeout del datáfono" });
+    });
 
-    openIt("QA-02 timeout de llamada (callTimeoutMs) menor que la duración real: se declara NOT_CHARGED y luego el cobro se autoriza", async () => {
+    it("QA-02 timeout de llamada (callTimeoutMs) menor que la duración real: queda UNKNOWN (nunca NOT_CHARGED) y el servicio sigue ocupado", async () => {
         const { s, transport } = mockSvc({ latency: { cardRead: 120, process: 10, init: 0, consult: 0 }, svc: { callTimeoutMs: 40 } });
         await s.init();
         const r = await s.pay({ amount: 12.34, reference: REF });
@@ -283,17 +293,44 @@ describe("'unknown' nunca es éxito ni fallo", () => {
         const chargedLater = charges(transport).length;
         assert.equal(chargedLater, 1);
         assert.notEqual(r.errorCode, "NOT_CHARGED", "NOT_CHARGED retryable + cargo posterior = doble cobro si el cajero reintenta");
-    }, { todo: "QA-02: _exec resuelve con -98 por temporizador local aunque la DLL siga esperando la tarjeta; _recover lo trata como -2 verificado" });
+        assert.equal(r.status, "unknown");
+        assert.ok(!r.retryable);
+    });
 
-    it("tras un timeout local, un segundo cobro choca con el guardián del datáfono (-3), no cobra dos veces", async () => {
+    it("QA-02 tras el timeout local el servicio sigue ocupado hasta el retorno tardío de la DLL (isBusy coherente)", async () => {
+        const { s } = mockSvc({ latency: { cardRead: 120, process: 10, init: 0, consult: 0 }, svc: { callTimeoutMs: 40 } });
+        await s.init();
+        const r = await s.pay({ amount: 12.34, reference: REF });
+        assert.equal(r.status, "unknown");
+        assert.equal(s.isBusy(), true, "la DLL puede seguir esperando la tarjeta");
+        const second = await s.pay({ amount: 12.34, reference: "ODOO-AAAA0002" });
+        assert.equal(second.errorCode, "BUSY");
+        await sleep(200); // retorno tardío de la DLL
+        assert.equal(s.isBusy(), false);
+    });
+
+    it("QA-02 con orphanMs vencido sin retorno tardío el servicio vuelve a estar libre", async () => {
+        let t = 1000;
+        const { s, transport } = await fakeSvc({ callTimeoutMs: 20, orphanMs: 500, now: () => new Date(t) });
+        transport.queue("fnDllOperPinPad", { never: true });
+        transport.queue("fnDllOperConsulta", { Response: 0, Result: QUERY_XML([]) });
+        const r = await s.pay({ amount: 5, reference: REF });
+        assert.equal(r.status, "unknown");
+        assert.equal(s.isBusy(), true);
+        t += 600;
+        assert.equal(s.isBusy(), false);
+    });
+
+    it("tras un timeout local, un segundo cobro NO llega al datáfono (BUSY) y no cobra dos veces", async () => {
         const { s, transport } = mockSvc({ latency: { cardRead: 120, process: 10, init: 0, consult: 0 }, svc: { callTimeoutMs: 40 } });
         await s.init();
         await s.pay({ amount: 12.34, reference: REF });
         const second = await s.pay({ amount: 12.34, reference: "ODOO-AAAA0002" });
         assert.equal(second.status, "error");
-        assert.equal(transport.busyViolations, 1);
+        assert.equal(second.errorCode, "BUSY");
+        assert.equal(transport.busyViolations, 0, "ya no depende del guardián del datáfono (S8f)");
         await sleep(200);
-        assert.equal(charges(transport).length, 1, "[SUPUESTO-HW] S8f: depende de que el servicio real también rechace la 2ª operación");
+        assert.equal(charges(transport).length, 1);
     });
 
     openIt("QA-03 init que nunca responde deja el servicio ocupado para siempre (sin timeout en _initCall)", async () => {
@@ -393,7 +430,7 @@ describe("Coherencia del importe autorizado vs línea POS", () => {
         }
     }, { todo: "QA-06: parsePayXml extrae factura/comercio/terminal/moneda pero _authorized no los coteja con la petición" });
 
-    openIt("QA-04 recuperación por consulta (-2): un cargo con importe distinto bajo la misma referencia se da por bueno", async () => {
+    it("QA-04 recuperación por consulta (-2): un cargo con importe distinto bajo la misma referencia se da por bueno", async () => {
         const { s, transport } = mockSvc();
         await s.init();
         transport.seedOperation({ cents: 100, factura: REF }); // 1,00 EUR cobrado antes con la misma referencia (reintento tras editar importe)
@@ -401,7 +438,7 @@ describe("Coherencia del importe autorizado vs línea POS", () => {
         const r = await s.pay({ amount: 50, reference: REF });
         assert.equal(r.status, "authorized");
         assert.equal(r.warning, "AMOUNT_MISMATCH", "se cobró 1,00 y la línea POS quedaría pagada con 50,00");
-    }, { todo: "QA-04: RedsysService._recover no coteja el importe de la operación recuperada (solo interpretQuery en la recarga lo hace)" });
+    });
 
     it("recarga: interpretQuery con importe distinto o varias autorizadas => unknown (revisión humana)", () => {
         const op = { factura: REF, estado: "F", resultado: "AUTORIZADA", pedido: "1", rts: "R", importe: "1.00", last4: "0018" };
@@ -511,7 +548,7 @@ describe("El mock no puede activarse en producción", () => {
         assert.deepEqual(flagReaders.filter((f) => !allowed.includes(f)), []);
     });
 
-    openIt("QA-10 el mock activo no deja marca en el cobro: una línea 'authorized' simulada es indistinguible de una real en BD", async () => {
+    it("QA-10 el mock activo no deja marca en el cobro: una línea 'authorized' simulada es indistinguible de una real en BD", async () => {
         const e = createRedsysEntry({ method, signKey: "K", search: "?redsys_sim=1" });
         assert.equal(e.kind, "mock");
         e.transport.setLatency(0);
@@ -520,7 +557,7 @@ describe("El mock no puede activarse en producción", () => {
         assert.equal(r.status, "authorized");
         const marked = /mock|simul/i.test(JSON.stringify(interpretPayResult(r).vals)) || /mock|simul/i.test(r.rawXml);
         assert.ok(marked, "ni transaction_id, ni redsys_xml, ni redsys_state delatan que es simulado");
-    }, { todo: "QA-10: ningún campo persistido distingue un cobro simulado (el firma es un hash falso pero sin marca). Si un admin deja redsys_simulation=1 y alguien añade ?redsys_sim=1 se registran 'cobros' sin dinero" });
+    });
 
     it("la referencia se deriva del uuid y es única por línea (<=20 car.)", () => {
         const a = makeReference("a1b2c3d4-0000-0000-0000-000000000001");

@@ -146,13 +146,23 @@ test("fallo de transporte (excepción) durante el cobro: se trata como -2", asyn
     assert.equal(r.status, "authorized");
 });
 
-test("timeout del transporte durante el cobro: consulta y no queda busy", async () => {
+test("timeout local del transporte durante el cobro (QA-02): consulta pero NUNCA concluye NOT_CHARGED", async () => {
     const { svc, transport } = await setup({ callTimeoutMs: 20 });
     transport.queue("fnDllOperPinPad", { never: true });
     transport.queue("fnDllOperConsulta", { Response: 0, Result: QUERY_XML([]) });
     const r = await svc.pay({ amount: 1, reference: REF });
-    assert.equal(r.errorCode, "NOT_CHARGED");
-    assert.equal(svc.isBusy(), false);
+    assert.equal(r.status, "unknown");
+    assert.equal(svc.state, "ready", "la máquina de estados no queda colgada");
+    assert.equal(svc.isBusy(), true, "pero la DLL puede seguir esperando: ocupado hasta su retorno tardío / orphanMs");
+});
+
+test("timeout local + la consulta encuentra el cobro autorizado: se recupera", async () => {
+    const { svc, transport } = await setup({ callTimeoutMs: 20 });
+    transport.queue("fnDllOperPinPad", { never: true });
+    transport.queue("fnDllOperConsulta", { Response: 0, Result: QUERY_XML([{ factura: REF }]) });
+    const r = await svc.pay({ amount: 12.34, reference: REF });
+    assert.equal(r.status, "authorized");
+    assert.equal(r.recovered, true);
 });
 
 test("-1 en pago: reinit y UN reintento del pago (no se ejecutó)", async () => {

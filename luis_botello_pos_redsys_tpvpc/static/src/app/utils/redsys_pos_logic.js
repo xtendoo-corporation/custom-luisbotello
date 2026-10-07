@@ -7,6 +7,11 @@
 export const REDSYS_METHOD = "redsys_tpvpc";
 export const POLL_INTERVAL_MS = 45000; // 30-60 s (plan Fase 4)
 export const RECOVERY_WINDOW_MS = 10 * 60 * 1000;
+/**
+ * QA-01: tras una recarga, una consulta vacía NO prueba "no cobrado" mientras el datáfono pueda seguir
+ * esperando tarjeta/PIN. No se concluye antes de esta gracia desde el inicio del cobro (>= timeout de la DLL, ~40 s).
+ */
+export const RECOVERY_GRACE_MS = 2 * 60 * 1000;
 
 /** Estados de pos.payment.payment_status que indican operación a medias. */
 export const IN_FLIGHT_STATUSES = ["waiting", "waitingCard", "waitingCancel"];
@@ -125,7 +130,10 @@ export function interpretPayResult(result, { isRefund = false, originalPedido = 
  * Interpreta la respuesta de `query` para una línea a medias.
  * @returns {{outcome:'authorized'|'not_charged'|'unknown', vals?:Object, message:string, result?:Object}}
  */
-export function interpretQuery(queryResult, { reference, amount, isRefund = false } = {}) {
+export function interpretQuery(
+    queryResult,
+    { reference, amount, isRefund = false, startedAt = null, now = Date.now(), graceMs = RECOVERY_GRACE_MS, deviceFree = true } = {}
+) {
     if (!queryResult || queryResult.error) {
         return {
             outcome: "unknown",
@@ -171,10 +179,133 @@ export function interpretQuery(queryResult, { reference, amount, isRefund = fals
     if (ops.some((o) => (o.estado || "").toUpperCase() === "P")) {
         return { outcome: "unknown", message: "La operación figura en proceso en Redsys. Vuelva a consultar en unos segundos." };
     }
+    // Denegación registrada por Redsys: evidencia cierta de "no cobrado".
+    if (ops.some((o) => (o.resultado || "").toLowerCase().includes("deneg") || (o.estado || "").toUpperCase() === "G")) {
+        return {
+            outcome: "not_charged",
+            certain: true,
+            message: "Redsys registra la operación como denegada: no se cobró. Puede reintentar.",
+        };
+    }
+    // Consulta vacía: solo prueba "no cobrado" si el datáfono ya no puede seguir procesándola (QA-01).
+    const elapsed = startedAt === null || startedAt === undefined ? -1 : now - Number(startedAt);
+    if (elapsed < graceMs) {
+        const wait = elapsed < 0 ? graceMs : graceMs - elapsed;
+        return {
+            outcome: "unknown",
+            waiting: true,
+            retryInMs: Math.max(1000, wait + 1000),
+            message:
+                "Redsys aún no muestra esta operación, pero el cobro pudo seguir en el datáfono. NO lo repita: " +
+                "espere un par de minutos a que el datáfono quede libre; se consultará de nuevo.",
+        };
+    }
+    if (!deviceFree) {
+        return {
+            outcome: "unknown",
+            waiting: true,
+            retryInMs: 30000,
+            message:
+                "Redsys no muestra la operación pero el datáfono no responde con normalidad: no se puede descartar el cobro. " +
+                "Verifique en el portal de Redsys.",
+        };
+    }
     return {
         outcome: "not_charged",
-        message: "Redsys no tiene ningún cobro autorizado con esta referencia: no se cobró. Puede reintentar.",
+        message:
+            "Redsys no tiene ningún cobro con esta referencia tras esperar a que el datáfono quedase libre: no consta cobro.",
     };
+}
+
+// ------------------------------------------------- marca de inicio del cobro (QA-01)
+
+/**
+ * Marca (no secreta) del instante en que se envió el cobro de una referencia: permite medir la gracia
+ * tras una recarga. `storage` = localStorage (si falla o no existe, solo memoria: la gracia empieza
+ * entonces en la primera recuperación de esta sesión, nunca antes).
+ */
+export function makeStartMarks(storage = null, prefix = "redsys_start:") {
+    const mem = new Map();
+    const safe = (fn, fallback = null) => {
+        try {
+            return storage ? fn(storage) : fallback;
+        } catch {
+            return fallback;
+        }
+    };
+    return {
+        set(reference, ms = Date.now()) {
+            if (!reference) {
+                return;
+            }
+            mem.set(reference, ms);
+            safe((st) => st.setItem(prefix + reference, String(ms)));
+        },
+        get(reference) {
+            if (!reference) {
+                return null;
+            }
+            if (mem.has(reference)) {
+                return mem.get(reference);
+            }
+            const raw = safe((st) => st.getItem(prefix + reference));
+            const n = raw === null || raw === undefined ? NaN : Number(raw);
+            return Number.isFinite(n) ? n : null;
+        },
+        /** Primera vez que vemos la línea sin marca: la gracia empieza ahora. */
+        getOrStart(reference, ms = Date.now()) {
+            const cur = this.get(reference);
+            if (cur !== null) {
+                return cur;
+            }
+            this.set(reference, ms);
+            return ms;
+        },
+        clear(reference) {
+            mem.delete(reference);
+            safe((st) => st.removeItem(prefix + reference));
+        },
+    };
+}
+
+// -------------------------------------------------------------- borrado (QA-23)
+
+/**
+ * ¿Se puede borrar una línea de pago Redsys desde la UI? Una línea con resultado dudoso, autorizada,
+ * de devolución, forzada o con operación en curso NO se borra (se perdería el control de un cobro
+ * posiblemente realizado y el cajero cobraría de nuevo).
+ * @param {Object} line
+ * @param {{operationActive?:boolean, inFlight?:boolean}} [ctx]
+ * @returns {{ok:boolean, reason?:string}}
+ */
+export function canDeleteRedsysLine(line, { operationActive = false, inFlight = false } = {}) {
+    if (!line || !isRedsysMethod(line.payment_method_id)) {
+        return { ok: true };
+    }
+    const state = line.redsys_state;
+    const status = line.payment_status;
+    if (state === "unknown" || state === "authorized" || state === "refund") {
+        return {
+            ok: false,
+            reason:
+                "Esta línea corresponde a un cobro con el datáfono que puede haberse realizado " +
+                `(referencia ${line.redsys_reference || line.payment_ref_no || "?"}). No se puede eliminar: resuélvala ` +
+                "(Forzar tras verificar en el portal de Redsys) o concílíela con administración.",
+        };
+    }
+    if (status === "force_done") {
+        return {
+            ok: false,
+            reason: "Esta línea está pendiente de confirmación manual de un cobro con el datáfono; no se puede eliminar.",
+        };
+    }
+    if (operationActive || inFlight || IN_FLIGHT_STATUSES.includes(status)) {
+        return {
+            ok: false,
+            reason: "Hay una operación en curso en el datáfono para esta línea; espere a su resultado antes de eliminarla.",
+        };
+    }
+    return { ok: true };
 }
 
 // --------------------------------------------------------------- devoluciones

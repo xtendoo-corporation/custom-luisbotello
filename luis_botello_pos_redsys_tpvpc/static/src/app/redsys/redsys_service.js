@@ -101,7 +101,9 @@ export class RedsysService {
      * @param {(ms:number) => Promise<void>} [options.sleep]
      * @param {number} [options.initBackoffMs=2000] espera antes del único reintento de init
      * @param {number} [options.initCooldownMs=5000] mínimo entre secuencias de init fallidas
-     * @param {number} [options.callTimeoutMs=180000] 0 = sin límite; vencido => se trata como -2
+     * @param {number} [options.callTimeoutMs=180000] 0 = sin límite; vencido => resultado DESCONOCIDO (-98, nunca "no cobrado")
+     * @param {number} [options.orphanMs=300000] ocupado tras un timeout local de cobro/devolución (QA-02)
+     * @param {Object} [options.locks] navigator.locks o equivalente: exclusión entre pestañas (QA-22)
      * @param {number} [options.recoveryWindowMs=600000] +-10 min (Anexo IX)
      * @param {boolean} [options.preflight=false] CheckStatus antes de cobrar (S4: validar con hardware)
      * @param {(msg:string, data?:Object)=>void} [options.logger] solo recibe op/códigos, jamás clave/XML
@@ -113,6 +115,13 @@ export class RedsysService {
         this.initCooldownMs = options.initCooldownMs ?? 5000;
         this.callTimeoutMs = options.callTimeoutMs ?? 180000;
         this.recoveryWindowMs = options.recoveryWindowMs ?? 600000;
+        // QA-02: tras un timeout local de un cobro/devolución la DLL puede seguir esperando la tarjeta:
+        // el servicio sigue "ocupado" hasta que llegue su retorno tardío o pase esta ventana.
+        this.orphanMs = options.orphanMs ?? 300000;
+        this._orphan = null; // { until:number } mientras una llamada de cobro agotada pueda seguir viva
+        // QA-22: exclusión entre pestañas. `locks` = API compatible con navigator.locks (request/ifAvailable).
+        // Sin ella (navegador antiguo, tests) se degrada al guardián del propio datáfono (-3).
+        this.locks = options.locks || null;
         this.preflight = options.preflight ?? false;
         this.logger = options.logger || null;
         this.config = null;
@@ -194,8 +203,52 @@ export class RedsysService {
             this.state === STATES.INITIALIZING ||
             this.state === STATES.PAYING ||
             this.state === STATES.REFUNDING ||
-            this.state === STATES.RECOVERING
+            this.state === STATES.RECOVERING ||
+            this._orphanActive()
         );
+    }
+
+    /** QA-02: una llamada de cobro agotada por el temporizador local puede seguir viva en el datáfono. */
+    _orphanActive() {
+        if (!this._orphan) {
+            return false;
+        }
+        if (this.now().getTime() >= this._orphan.until) {
+            this._orphan = null;
+            return false;
+        }
+        return true;
+    }
+
+    /** QA-22: toma el cerrojo del comercio/terminal sin esperar. @returns {Promise<null|(()=>void)>} null = otra pestaña lo tiene */
+    async _acquireLock() {
+        const locks = this.locks;
+        if (!locks || typeof locks.request !== "function") {
+            return () => {};
+        }
+        const name = `redsys-${this.config?.merchant}-${this.config?.terminal}`;
+        try {
+            return await new Promise((resolve, reject) => {
+                locks
+                    .request(name, { ifAvailable: true }, (lock) => {
+                        if (!lock) {
+                            resolve(null);
+                            return undefined;
+                        }
+                        return new Promise((release) => resolve(() => release()));
+                    })
+                    .catch(reject);
+            });
+        } catch {
+            return () => {}; // degradación segura: sin Web Locks se confía en el guardián del datáfono
+        }
+    }
+
+    _lockedResult(ctx) {
+        return this._error(ctx, CODE_BUSY, {
+            userMessage:
+                "Otra ventana o pestaña del POS está usando el datáfono. Espere a que termine antes de iniciar otra operación.",
+        });
     }
 
     isReady() {
@@ -208,9 +261,14 @@ export class RedsysService {
     _exec(command, args) {
         return new Promise((resolve) => {
             let done = false;
+            let timedOut = false;
             let timer = null;
+            const track = command === FN_PAY || command === FN_REFUND;
             const finish = (ret) => {
                 if (done) {
+                    if (timedOut && track) {
+                        this._orphan = null; // retorno tardío de la DLL: ya no hay nada vivo
+                    }
                     return;
                 }
                 done = true;
@@ -220,10 +278,13 @@ export class RedsysService {
                 resolve(ret);
             };
             if (this.callTimeoutMs > 0) {
-                timer = setTimeout(
-                    () => finish({ Response: RET_TRANSPORT_ERROR, Result: null, timedOut: true }),
-                    this.callTimeoutMs
-                );
+                timer = setTimeout(() => {
+                    timedOut = true;
+                    if (track) {
+                        this._orphan = { until: this.now().getTime() + this.orphanMs };
+                    }
+                    finish({ Response: RET_TRANSPORT_ERROR, Result: null, timedOut: true });
+                }, this.callTimeoutMs);
             }
             try {
                 this.transport.execFnDll(command, args, (ret) => finish(this._normalizeRet(ret)));
@@ -380,7 +441,12 @@ export class RedsysService {
             return this._error(ctx, CODE_NOT_INITIALIZED);
         }
         this._setState(STATES.PAYING);
+        let release = null;
         try {
+            release = await this._acquireLock();
+            if (!release) {
+                return this._lockedResult(ctx);
+            }
             const notReady = await this._ensureReady(ctx);
             if (notReady) {
                 return notReady;
@@ -400,6 +466,9 @@ export class RedsysService {
             }
             return await this._operate(ctx, FN_PAY, (ref) => [amountStr, ref, "PAGO"], amountStr);
         } finally {
+            if (release) {
+                release();
+            }
             this._endOperation();
         }
     }
@@ -423,7 +492,12 @@ export class RedsysService {
             return this._error(ctx, CODE_NOT_INITIALIZED);
         }
         this._setState(STATES.REFUNDING);
+        let release = null;
         try {
+            release = await this._acquireLock();
+            if (!release) {
+                return this._lockedResult(ctx);
+            }
             const notReady = await this._ensureReady(ctx);
             if (notReady) {
                 return notReady;
@@ -435,6 +509,9 @@ export class RedsysService {
                 amountStr
             );
         } finally {
+            if (release) {
+                release();
+            }
             this._endOperation();
         }
     }
@@ -447,6 +524,7 @@ export class RedsysService {
      */
     async _operate(ctx, fn, buildArgs, amountStr) {
         const t0 = this.now(); // ANTES de la operación (§4.5)
+        ctx.amountStr = amountStr;
         let retried = false;
         for (;;) {
             this._log("op_call", { fn, reference: ctx.reference });
@@ -501,10 +579,16 @@ export class RedsysService {
                     userMessage: describeTpvpc(tcode) || parsed.error.mensaje || SERVICE_MESSAGES[CODE_BAD_RESPONSE],
                 });
             }
-            return this._recover(ctx, t0); // retorno 0 pero XML ilegible: pudo haberse cobrado
+            return this._recover(ctx, t0); // retorno 0 pero XML ilegible: la DLL terminó, pudo haberse cobrado
         }
-        if (code === -2 || code === RET_TRANSPORT_ERROR) {
+        if (code === -2) {
+            // -2 de la DLL (su propio timeout): resultado desconocido, pero la DLL ha terminado.
             return this._recover(ctx, t0);
+        }
+        if (code === RET_TRANSPORT_ERROR) {
+            // QA-02: sin respuesta de la DLL (timeout local, excepción, fetch fallido): NO es evidencia de
+            // "no cobrado"; la DLL puede seguir esperando tarjeta/PIN. Solo se acepta lo que la consulta encuentre.
+            return this._recover(ctx, t0, { strict: true });
         }
         if (code === RET_LIB_EXPIRED) {
             return this._error(ctx, CODE_LIB_EXPIRED);
@@ -521,7 +605,7 @@ export class RedsysService {
      * encontrada autorizada => authorized; no encontrada => error reintentable;
      * la consulta falla => unknown (jamás reintento ciego).
      */
-    async _recover(ctx, t0) {
+    async _recover(ctx, t0, { strict = false } = {}) {
         this._setState(STATES.RECOVERING);
         if (!this._initialized) {
             return this._unknown(ctx, "No se pudo reinicializar el datáfono para verificar la operación.");
@@ -557,6 +641,9 @@ export class RedsysService {
             };
             if (authorized.length > 1) {
                 result.warning = "MULTIPLE_AUTHORIZED";
+            } else if (ctx.amountStr && !this._sameAmount(op.importe, ctx.amountStr)) {
+                // QA-04: misma referencia pero otro importe (p. ej. reintento tras editar la línea).
+                result.warning = "AMOUNT_MISMATCH";
             }
             return result;
         }
@@ -570,10 +657,26 @@ export class RedsysService {
         if (denied) {
             return this._denied(ctx, denied, null, true);
         }
+        if (strict) {
+            return this._unknown(
+                ctx,
+                `Redsys no muestra todavía la ${verb}, pero el datáfono pudo no haber terminado. No la repita: ` +
+                    "espere unos minutos y verifique la referencia."
+            );
+        }
         return this._error(ctx, CODE_NOT_CHARGED, {
             retryable: true,
             userMessage: `La ${verb} no se realizó. Puede reintentarla.`,
         });
+    }
+
+    /** Compara el importe de una operación consultada con el pedido ("12.34"); ilegible => distinto. */
+    _sameAmount(opImporte, amountStr) {
+        if (opImporte === undefined || opImporte === null || opImporte === "") {
+            return true; // la consulta no lo informa: no hay nada que cotejar
+        }
+        const n = Number(String(opImporte).replace(",", "."));
+        return Number.isFinite(n) && Math.abs(n - Number(amountStr)) <= 0.001;
     }
 
     // ------------------------------------------------------------------- query
@@ -594,9 +697,21 @@ export class RedsysService {
             };
         }
         this._setState(STATES.RECOVERING);
+        let release = null;
         try {
+            release = await this._acquireLock();
+            if (!release) {
+                return {
+                    found: false,
+                    operations: [],
+                    error: { code: CODE_BUSY, message: this._lockedResult({}).userMessage },
+                };
+            }
             return await this._query({ reference, from, to, type });
         } finally {
+            if (release) {
+                release();
+            }
             this._endOperation();
         }
     }

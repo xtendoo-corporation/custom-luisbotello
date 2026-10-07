@@ -5,7 +5,10 @@ import {
     canRefundRedsysLine,
     chooseTransportKind,
     interpretPayResult,
+    RECOVERY_GRACE_MS,
+    canDeleteRedsysLine,
     interpretQuery,
+    makeStartMarks,
     needsRecovery,
     previousRefunds,
     receiptText,
@@ -94,7 +97,8 @@ test("interpretQuery: autorizada => authorized; sin operaciones => not_charged; 
     assert.equal(ok.vals.redsys_state, "authorized");
     assert.equal(interpretQuery({ operations: [op] }, { reference: "R1", amount: -12.5, isRefund: true }).vals.redsys_state, "refund");
     assert.equal(interpretQuery({ operations: [op] }, { reference: "R1", amount: 10 }).outcome, "unknown");
-    assert.equal(interpretQuery({ operations: [] }, { reference: "R1", amount: 1 }).outcome, "not_charged");
+    const LONG_AGO = { startedAt: 0, now: 10 * 60 * 1000 }; // gracia ya vencida
+    assert.equal(interpretQuery({ operations: [] }, { reference: "R1", amount: 1, ...LONG_AGO }).outcome, "not_charged");
     assert.equal(
         interpretQuery({ operations: [{ ...op, estado: "G", resultado: "DENEGADA" }] }, { reference: "R1", amount: 12.5 }).outcome,
         "not_charged"
@@ -102,7 +106,65 @@ test("interpretQuery: autorizada => authorized; sin operaciones => not_charged; 
     assert.equal(interpretQuery({ operations: [{ ...op, estado: "P", resultado: "x" }] }, { reference: "R1", amount: 12.5 }).outcome, "unknown");
     assert.equal(interpretQuery({ error: { message: "x" } }, {}).outcome, "unknown");
     // otra referencia no cuenta
-    assert.equal(interpretQuery({ operations: [op] }, { reference: "OTRA", amount: 12.5 }).outcome, "not_charged");
+    assert.equal(interpretQuery({ operations: [op] }, { reference: "OTRA", amount: 12.5, ...LONG_AGO }).outcome, "not_charged");
+});
+
+test("QA-01 interpretQuery: consulta vacía NO prueba 'no cobrado' dentro de la gracia, sin marca de inicio o con datáfono no sano", () => {
+    const q = { operations: [] };
+    const base = { reference: "R1", amount: 1 };
+    const within = interpretQuery(q, { ...base, startedAt: 1000, now: 1000 + 30000 });
+    assert.equal(within.outcome, "unknown");
+    assert.equal(within.waiting, true);
+    assert.ok(within.retryInMs > 0);
+    assert.equal(interpretQuery(q, base).outcome, "unknown", "sin inicio conocido no se concluye");
+    assert.equal(interpretQuery(q, { ...base, startedAt: 0, now: RECOVERY_GRACE_MS }).outcome, "not_charged");
+    const bad = interpretQuery(q, { ...base, startedAt: 0, now: RECOVERY_GRACE_MS * 2, deviceFree: false });
+    assert.equal(bad.outcome, "unknown");
+    // denegación registrada = evidencia cierta, sin esperar
+    const den = interpretQuery({ operations: [{ factura: "R1", estado: "F", resultado: "DENEGADA" }] }, { ...base, startedAt: 1000, now: 1001 });
+    assert.equal(den.outcome, "not_charged");
+    assert.equal(den.certain, true);
+});
+
+test("makeStartMarks: memoria + storage, tolerante a fallos", () => {
+    const store = new Map();
+    const storage = { setItem: (k, v) => store.set(k, v), getItem: (k) => store.get(k) ?? null, removeItem: (k) => store.delete(k) };
+    const a = makeStartMarks(storage);
+    a.set("R1", 123);
+    assert.equal(makeStartMarks(storage).get("R1"), 123, "sobrevive a una recarga (nuevo objeto, mismo storage)");
+    assert.equal(a.get("NOPE"), null);
+    assert.equal(a.getOrStart("R2", 50), 50);
+    assert.equal(a.getOrStart("R2", 99), 50);
+    a.clear("R1");
+    assert.equal(makeStartMarks(storage).get("R1"), null);
+    const broken = { setItem() { throw new Error("x"); }, getItem() { throw new Error("x"); }, removeItem() { throw new Error("x"); } };
+    const b = makeStartMarks(broken);
+    b.set("R", 7);
+    assert.equal(b.get("R"), 7);
+    assert.equal(makeStartMarks(null).get("R"), null);
+});
+
+test("QA-23 canDeleteRedsysLine: unknown/authorized/refund/force_done/en curso no se borran; retry limpio sí", () => {
+    const m = { use_payment_terminal: "redsys_tpvpc" };
+    const L = (o) => ({ payment_method_id: m, ...o });
+    for (const o of [
+        { redsys_state: "unknown", payment_status: "force_done" },
+        { redsys_state: "unknown", payment_status: "retry" },
+        { redsys_state: "authorized", payment_status: "done" },
+        { redsys_state: "refund", payment_status: "done" },
+        { payment_status: "force_done" },
+        { payment_status: "waiting" },
+        { payment_status: "waitingCard" },
+    ]) {
+        const r = canDeleteRedsysLine(L(o));
+        assert.equal(r.ok, false, JSON.stringify(o));
+        assert.ok(r.reason);
+    }
+    assert.equal(canDeleteRedsysLine(L({ payment_status: "retry" }), { operationActive: true }).ok, false);
+    assert.equal(canDeleteRedsysLine(L({ payment_status: "retry" }), { inFlight: true }).ok, false);
+    assert.equal(canDeleteRedsysLine(L({ payment_status: "retry" })).ok, true);
+    assert.equal(canDeleteRedsysLine(L({ payment_status: "pending" })).ok, true);
+    assert.equal(canDeleteRedsysLine({ payment_method_id: { use_payment_terminal: "adyen" }, redsys_state: "unknown" }).ok, true);
 });
 
 const orig = {
