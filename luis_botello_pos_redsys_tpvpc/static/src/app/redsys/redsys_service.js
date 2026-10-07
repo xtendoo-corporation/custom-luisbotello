@@ -214,10 +214,52 @@ export class RedsysService {
             return false;
         }
         if (this.now().getTime() >= this._orphan.until) {
-            this._orphan = null;
+            this._clearOrphan();
             return false;
         }
         return true;
+    }
+
+    /** QA2-12: fin del "huérfano" (retorno tardío o plazo largo): se libera también el cerrojo que retenía. */
+    _clearOrphan() {
+        const orphan = this._orphan;
+        this._orphan = null;
+        if (orphan) {
+            if (orphan.timer) {
+                clearTimeout(orphan.timer);
+            }
+            if (orphan.release) {
+                const release = orphan.release;
+                orphan.release = null;
+                release();
+            }
+        }
+    }
+
+    /**
+     * QA2-12: libera el cerrojo de la operación, salvo que haya quedado un cobro huérfano (timeout local con
+     * la DLL posiblemente viva): entonces el cerrojo lo retiene el huérfano hasta el retorno tardío o hasta
+     * `orphanMs`, para que otra pestaña no envíe un 2º cobro al mismo datáfono. @returns {void}
+     */
+    _releaseOrHold(release) {
+        if (!release) {
+            return;
+        }
+        if (this._orphan && !this._orphan.release && this._orphanActive()) {
+            const orphan = this._orphan;
+            orphan.release = release;
+            const ms = Math.max(0, orphan.until - this.now().getTime());
+            orphan.timer = setTimeout(() => {
+                if (this._orphan === orphan) {
+                    this._clearOrphan();
+                }
+            }, ms);
+            if (orphan.timer && orphan.timer.unref) {
+                orphan.timer.unref();
+            }
+            return;
+        }
+        release();
     }
 
     /** QA-22: toma el cerrojo del comercio/terminal sin esperar. @returns {Promise<null|(()=>void)>} null = otra pestaña lo tiene */
@@ -267,7 +309,7 @@ export class RedsysService {
             const finish = (ret) => {
                 if (done) {
                     if (timedOut && track) {
-                        this._orphan = null; // retorno tardío de la DLL: ya no hay nada vivo
+                        this._clearOrphan(); // retorno tardío de la DLL: ya no hay nada vivo (libera el cerrojo retenido)
                     }
                     return;
                 }
@@ -281,7 +323,8 @@ export class RedsysService {
                 timer = setTimeout(() => {
                     timedOut = true;
                     if (track) {
-                        this._orphan = { until: this.now().getTime() + this.orphanMs };
+                        this._clearOrphan();
+                        this._orphan = { until: this.now().getTime() + this.orphanMs, release: null, timer: null };
                     }
                     finish({ Response: RET_TRANSPORT_ERROR, Result: null, timedOut: true });
                 }, this.callTimeoutMs);
@@ -340,16 +383,35 @@ export class RedsysService {
         if (this.isBusy()) {
             return { ok: false, code: CODE_BUSY, message: SERVICE_MESSAGES[CODE_BUSY] };
         }
+        const previous = this.state;
         this._setState(STATES.INITIALIZING);
-        this._initPromise = this._runInit()
+        // QA2-11: el init público toma el mismo cerrojo que cobrar/consultar (una pestaña que arranca no debe
+        // reinicializar la DLL mientras otra cobra). Los init internos (_ensureReady) ya van dentro del cerrojo.
+        this._initPromise = this._lockedInit()
             .then((result) => {
-                this._setState(result.ok ? STATES.READY : STATES.FAILED);
+                if (result.lockedByOther) {
+                    this._setState(previous === STATES.INITIALIZING ? STATES.UNINITIALIZED : previous);
+                } else {
+                    this._setState(result.ok ? STATES.READY : STATES.FAILED);
+                }
                 return result;
             })
             .finally(() => {
                 this._initPromise = null;
             });
         return this._initPromise;
+    }
+
+    async _lockedInit() {
+        const release = await this._acquireLock();
+        if (!release) {
+            return { ok: false, code: CODE_BUSY, message: SERVICE_MESSAGES[CODE_BUSY], lockedByOther: true };
+        }
+        try {
+            return await this._runInit();
+        } finally {
+            release();
+        }
     }
 
     /** Secuencia de init (hasta 2 llamadas). No toca `state`; sí `_initialized`. */
@@ -404,7 +466,13 @@ export class RedsysService {
         }
         this._setState(STATES.RECOVERING); // ocupado mientras dura la llamada
         let code;
+        let release = null;
         try {
+            // QA2-11: el polling de otra pestaña no llega a la DLL mientras una cobra.
+            release = await this._acquireLock();
+            if (!release) {
+                return { code: this._lastStatus, busy: true };
+            }
             const ret = await this._exec(FN_STATUS, []);
             code = ret.Response;
             if (code === RET_SERVICE_REINIT) {
@@ -416,6 +484,9 @@ export class RedsysService {
                 this._initialized = false;
             }
         } finally {
+            if (release) {
+                release();
+            }
             this._endOperation();
         }
         this._lastStatus = code;
@@ -466,9 +537,7 @@ export class RedsysService {
             }
             return await this._operate(ctx, FN_PAY, (ref) => [amountStr, ref, "PAGO"], amountStr);
         } finally {
-            if (release) {
-                release();
-            }
+            this._releaseOrHold(release);
             this._endOperation();
         }
     }
@@ -509,9 +578,7 @@ export class RedsysService {
                 amountStr
             );
         } finally {
-            if (release) {
-                release();
-            }
+            this._releaseOrHold(release);
             this._endOperation();
         }
     }
