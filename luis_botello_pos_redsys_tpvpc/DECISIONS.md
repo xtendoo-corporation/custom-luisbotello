@@ -1,102 +1,531 @@
 # DECISIONS
-- D1: Módulo depende solo de `point_of_sale`; sin dependencias con otros luis_botello_*.
+
+- D1: Módulo depende solo de `point_of_sale`; sin dependencias con otros
+  luis*botello*\*.
 - D2: Licencia OPL-1, versión 19.0.1.0.0.
-- D3: Toda la lógica Redsys en `static/src/app/redsys/`; transportes intercambiables (RealJs, RealHttp, Mock).
-- D4 (riesgo aceptado): la clave de firma viaja al navegador (necesario para fnDllIniTpvpcLatente). Solo para group_pos_user y solo del método de la caja.
-- D5: Devoluciones vía `updateRefundPaymentLine` copiando pedido/RTS de la línea original (patrón razorpay/stripe). `transaction_id` = pedido Redsys.
-- D6: Proteger líneas Redsys confirmadas frente a `unlink` (el wizard backend de pos_conventional las borra).
-- D7 (clave de firma): `redsys_signature_key` tiene `groups='point_of_sale.group_pos_user'` y `copy=False`, y NO está en `_load_pos_data_fields` (el payload de carga del POS incluye todos los métodos de pago y la expondría). El POS la obtiene con el RPC `pos.payment.method.redsys_get_signature_key(config_id)` -> `{method_id: clave}`: exige `group_pos_user`, `check_access('read')` sobre la config y devuelve solo métodos `redsys_tpvpc` de `config.payment_method_ids`. El frontend debe llamarlo al iniciar y mantener la clave solo en memoria (no localStorage, no logs).
-- D8 (simulación): `redsys_simulation` se carga al POS (lo necesita el front), pero solo escribible por `group_pos_manager` (comprobación en create/write, sin groups de lectura). El front/transporte NO debe activar el mock en producción por otra vía distinta a este flag.
-- D9 (unicidad): constraint Python (sudo, active_test=False) `(redsys_merchant_code, redsys_terminal_number)` único entre métodos `redsys_tpvpc`. `payment_method_type='terminal'` ya lo fuerza el core al elegir terminal (y limpia el terminal si deja de serlo); no se duplica.
-- D10 (protección de líneas): `pos.payment` con `redsys_state` en authorized/unknown/refund no se puede borrar (UserError) ni modificar en importe, método, pedido, transaction_id, payment_ref_no, redsys_rts/xml/reference; único cambio de estado permitido: unknown -> otro estado. Bypass explícito solo con contexto `redsys_force_unlink=True` (uso de mantenimiento). Límite: el borrado en cascada por BD (`ondelete='cascade'` al borrar el pos.order) y SQL directo no pasan por ORM.
-- D11: los campos nuevos de `pos.payment` se cargan al POS sin declarar nada porque el mixin devuelve `[]` (= todos). Un test lo vigila.
-- No verificado (backend): validación servidor del importe autorizado frente al XML (§7.5) no implementada; el XML guardado permite auditarlo a posteriori.
+- D3: Toda la lógica Redsys en `static/src/app/redsys/`; transportes intercambiables
+  (RealJs, RealHttp, Mock).
+- D4 (riesgo aceptado): la clave de firma viaja al navegador (necesario para
+  fnDllIniTpvpcLatente). Solo para group_pos_user y solo del método de la caja.
+- D5: Devoluciones vía `updateRefundPaymentLine` copiando pedido/RTS de la línea
+  original (patrón razorpay/stripe). `transaction_id` = pedido Redsys.
+- D6: Proteger líneas Redsys confirmadas frente a `unlink` (el wizard backend de
+  pos_conventional las borra).
+- D7 (clave de firma): `redsys_signature_key` tiene
+  `groups='point_of_sale.group_pos_user'` y `copy=False`, y NO está en
+  `_load_pos_data_fields` (el payload de carga del POS incluye todos los métodos de pago
+  y la expondría). El POS la obtiene con el RPC
+  `pos.payment.method.redsys_get_signature_key(config_id)` -> `{method_id: clave}`:
+  exige `group_pos_user`, `check_access('read')` sobre la config y devuelve solo métodos
+  `redsys_tpvpc` de `config.payment_method_ids`. El frontend debe llamarlo al iniciar y
+  mantener la clave solo en memoria (no localStorage, no logs).
+- D8 (simulación): `redsys_simulation` se carga al POS (lo necesita el front), pero solo
+  escribible por `group_pos_manager` (comprobación en create/write, sin groups de
+  lectura). El front/transporte NO debe activar el mock en producción por otra vía
+  distinta a este flag.
+- D9 (unicidad): constraint Python (sudo, active_test=False)
+  `(redsys_merchant_code, redsys_terminal_number)` único entre métodos `redsys_tpvpc`.
+  `payment_method_type='terminal'` ya lo fuerza el core al elegir terminal (y limpia el
+  terminal si deja de serlo); no se duplica.
+- D10 (protección de líneas): `pos.payment` con `redsys_state` en
+  authorized/unknown/refund no se puede borrar (UserError) ni modificar en importe,
+  método, pedido, transaction_id, payment_ref_no, redsys_rts/xml/reference; único cambio
+  de estado permitido: unknown -> otro estado. Bypass explícito solo con contexto
+  `redsys_force_unlink=True` (uso de mantenimiento). Límite: el borrado en cascada por
+  BD (`ondelete='cascade'` al borrar el pos.order) y SQL directo no pasan por ORM.
+- D11: los campos nuevos de `pos.payment` se cargan al POS sin declarar nada porque el
+  mixin devuelve `[]` (= todos). Un test lo vigila.
+- No verificado (backend): validación servidor del importe autorizado frente al XML
+  (§7.5) no implementada; el XML guardado permite auditarlo a posteriori.
 
 ## Simulador (static/src/app/redsys/mock/)
-- SIM1: `MockTransport` implementa `initFnDll/execFnDll/subscribeEvent/EnableLog/DisableLog` y marca `isMock = true`. Comandos: `fnDllOperPinPad`, `fnDllOperComContable`, `fnDllOperConsulta`, `fnDllCheckStatus`, `fnDllParaTpvpcLatente`; otro comando devuelve -13. Callbacks siempre asíncronos (reloj inyectable `{now,setTimeout,clearTimeout}`; `FakeClock` incluido para tests; `latency: 0` o un objeto parcial de `DEFAULT_LATENCY`, también por escenario).
-- SIM2: XML copiado de los manuales (v2.52 §3.8/3.11/3.14, ConsultasV2d2, Anexo VI/VII); un test compara el orden de etiquetas con el ejemplo del manual. `firma` es un hash falso determinista (no usa la clave). Solo PAN enmascarado `************NNNN`. La clave de init se descarta (solo se valida que no esté vacía) y los logs/`callLog` la sustituyen por `***`.
-- SIM3: almacén de operaciones (`OperationStore`): pedido incremental desde 10549, RTS de 24 dígitos como en el manual. Un -2 "cobrado" crea la operación, por lo que `fnDllOperConsulta` la encuentra (más recientes primero; si hay RTS se ignoran los demás filtros; pagina de 25). Denegadas también quedan registradas (consulta con resultado DENEGADA). Devolución solo si existe pedido autorizado (y RTS si se da) e importe <= original menos lo ya devuelto; errores `TPV-PC0091` (no existe), `TPV-PC0123` (denegada), `TPV-PC0100` (no devolvible/importe).
-- SIM4: forzado del siguiente resultado: `forceNext(spec)` (cola, un solo uso, solo lo consume la llamada a la que aplica el escenario: init/pay/refund/check) y `setDefaultScenario`. Escenarios: authorized, denied (estado F + Denegada + código real, `denialCode`), denied_g (estado G), unknown_charged, unknown_not_charged, unknown_query_fails (la consulta posterior da -2, `failConsults`), reinit_1/reinit_99 (la sesión queda no inicializada: todo devuelve -1/-99 hasta `initFnDll` OK), return_code (`code`), malformed_xml, truncated_xml (`charged:false` para que no quede cobrada; por defecto sí, peor caso), init_error / `init_minus16|20|40` (cualquier código), check_terminal_fail (-2), check_server_fail (-3). También valida init (-3/-4/-5 faltan datos, -21 versión no 5.1/6.1/8.1), importe (-18), referencia > 20 o tipo distinto de PAGO (-13) y una sola transacción simultánea (segunda -3, `busyViolations`).
-- SIM5: eventos de un pago: [2 opcional], 1 al inicio, 4 tras `cardRead` (15 s por defecto), 3 al terminar (justo antes del callback). En -2: 1 [4], 5, 3 y callback -2 al agotar `timeout`. Los de devolución con original no emiten eventos.
-- SIM6: consola (`sim_console.js`, DOM puro, sin OWL ni Odoo). Doble puerta: URL con `redsys_sim=1` Y `pos.payment.method.redsys_simulation === true` Y transporte mock. El servicio la monta solo así: `if (shouldShowSimConsole({search: location.search + location.hash, methodSimulation: method.redsys_simulation, transport})) this._simConsole = mountSimConsole(transport, {document})`, y llama a `destroy()` al parar. No muestra clave ni PAN.
-- SIM7: `package.json` `{"type":"module"}` en la raíz del módulo (fuera de `static/`, no entra en bundles) para ejecutar los tests con Node sin Odoo: `node --test tests_js/mock/` desde la raíz del módulo (Node >= 18). Los imports llevan extensión `.js` (el transpilador de Odoo la admite).
-- [SUPUESTO-HW] S8 (simulador, a confirmar en la sesión real): (a) el evento 3 va justo antes del callback y el payload de eventos es `{Response:0,Result:null}` (S4: sin `tpvpc-impl.js`); (b) errores de negocio de devolución = `Response -3` + `<Operaciones><Error>` (la DLL real podría devolver 0); (c) timeout de la librería que da -2 = 40 s; (d) consulta sin resultados = `numoperaciones 0` sin `<operacion>`; (e) una denegación llega como estado F/Denegada (Consultas) y, como variante, estado G (manual 3.x); (f) segunda operación simultánea = -3; (g) `fnDllOperConsulta` tras un -2 puede fallar con -2. No cubierto: DCC, eventos 6/7, aviso `versdllimpl` de librería antigua, preautorización.
+
+- SIM1: `MockTransport` implementa
+  `initFnDll/execFnDll/subscribeEvent/EnableLog/DisableLog` y marca `isMock = true`.
+  Comandos: `fnDllOperPinPad`, `fnDllOperComContable`, `fnDllOperConsulta`,
+  `fnDllCheckStatus`, `fnDllParaTpvpcLatente`; otro comando devuelve -13. Callbacks
+  siempre asíncronos (reloj inyectable `{now,setTimeout,clearTimeout}`; `FakeClock`
+  incluido para tests; `latency: 0` o un objeto parcial de `DEFAULT_LATENCY`, también
+  por escenario).
+- SIM2: XML copiado de los manuales (v2.52 §3.8/3.11/3.14, ConsultasV2d2, Anexo VI/VII);
+  un test compara el orden de etiquetas con el ejemplo del manual. `firma` es un hash
+  falso determinista (no usa la clave). Solo PAN enmascarado `************NNNN`. La
+  clave de init se descarta (solo se valida que no esté vacía) y los logs/`callLog` la
+  sustituyen por `***`.
+- SIM3: almacén de operaciones (`OperationStore`): pedido incremental desde 10549, RTS
+  de 24 dígitos como en el manual. Un -2 "cobrado" crea la operación, por lo que
+  `fnDllOperConsulta` la encuentra (más recientes primero; si hay RTS se ignoran los
+  demás filtros; pagina de 25). Denegadas también quedan registradas (consulta con
+  resultado DENEGADA). Devolución solo si existe pedido autorizado (y RTS si se da) e
+  importe <= original menos lo ya devuelto; errores `TPV-PC0091` (no existe),
+  `TPV-PC0123` (denegada), `TPV-PC0100` (no devolvible/importe).
+- SIM4: forzado del siguiente resultado: `forceNext(spec)` (cola, un solo uso, solo lo
+  consume la llamada a la que aplica el escenario: init/pay/refund/check) y
+  `setDefaultScenario`. Escenarios: authorized, denied (estado F + Denegada + código
+  real, `denialCode`), denied_g (estado G), unknown_charged, unknown_not_charged,
+  unknown_query_fails (la consulta posterior da -2, `failConsults`), reinit_1/reinit_99
+  (la sesión queda no inicializada: todo devuelve -1/-99 hasta `initFnDll` OK),
+  return_code (`code`), malformed_xml, truncated_xml (`charged:false` para que no quede
+  cobrada; por defecto sí, peor caso), init_error / `init_minus16|20|40` (cualquier
+  código), check_terminal_fail (-2), check_server_fail (-3). También valida init
+  (-3/-4/-5 faltan datos, -21 versión no 5.1/6.1/8.1), importe (-18), referencia > 20 o
+  tipo distinto de PAGO (-13) y una sola transacción simultánea (segunda -3,
+  `busyViolations`).
+- SIM5: eventos de un pago: [2 opcional], 1 al inicio, 4 tras `cardRead` (15 s por
+  defecto), 3 al terminar (justo antes del callback). En -2: 1 [4], 5, 3 y callback -2
+  al agotar `timeout`. Los de devolución con original no emiten eventos.
+- SIM6: consola (`sim_console.js`, DOM puro, sin OWL ni Odoo). Doble puerta: URL con
+  `redsys_sim=1` Y `pos.payment.method.redsys_simulation === true` Y transporte mock. El
+  servicio la monta solo así:
+  `if (shouldShowSimConsole({search: location.search + location.hash, methodSimulation: method.redsys_simulation, transport})) this._simConsole = mountSimConsole(transport, {document})`,
+  y llama a `destroy()` al parar. No muestra clave ni PAN.
+- SIM7: `package.json` `{"type":"module"}` en la raíz del módulo (fuera de `static/`, no
+  entra en bundles) para ejecutar los tests con Node sin Odoo:
+  `node --test tests_js/mock/` desde la raíz del módulo (Node >= 18). Los imports llevan
+  extensión `.js` (el transpilador de Odoo la admite).
+- [SUPUESTO-HW] S8 (simulador, a confirmar en la sesión real): (a) el evento 3 va justo
+  antes del callback y el payload de eventos es `{Response:0,Result:null}` (S4: sin
+  `tpvpc-impl.js`); (b) errores de negocio de devolución = `Response -3` +
+  `<Operaciones><Error>` (la DLL real podría devolver 0); (c) timeout de la librería que
+  da -2 = 40 s; (d) consulta sin resultados = `numoperaciones 0` sin `<operacion>`; (e)
+  una denegación llega como estado F/Denegada (Consultas) y, como variante, estado G
+  (manual 3.x); (f) segunda operación simultánea = -3; (g) `fnDllOperConsulta` tras un
+  -2 puede fallar con -2. No cubierto: DCC, eventos 6/7, aviso `versdllimpl` de librería
+  antigua, preautorización.
 
 ## Servicio JS (agente Servicio JS)
-- J1: Lógica pura en `static/src/app/redsys/` (redsys_service, xml_parser, errors, transports). Todos con `/** @odoo-module */` (el asset glob `static/src/**/*` solo transpila los marcados) e imports relativos con `.js` (válidos en Odoo y en Node). Tests sin Odoo: `node --test tests_js/` (ver `package.json` raíz con `"type":"module"`; Node 18+, p. ej. `docker run --rm -v $PWD:/m -w /m --entrypoint sh odoo_19-odoo node --test tests_js/`). Los tests propios del servicio pasan; el total de `tests_js/` (con simulador e integración) se verifica ejecutándolos.
-- J2: Estados: uninitialized, initializing, ready, paying, refunding, recovering, failed. `isBusy()` = initializing/paying/refunding/recovering. `pay`/`refund` en busy devuelven `{status:'error', errorCode:'BUSY'}` sin tocar el transporte; `query` público y `checkStatus` tampoco interrumpen una operación (checkStatus devuelve el último valor con `busy:true`).
-- J3: Recuperación -2 (y excepción/timeout de transporte, retorno 0 con XML ilegible, estado P, TPV-PC0117/0118): `t0` antes de cobrar, consulta `fnDllOperConsulta(null,null,reference,t0-10min,max(t0,now)+10min,'PAGO'|'DEVOLUCION',null,'0')`, filtra de nuevo por `factura==reference`, recorre hasta 5 páginas. Autorizada => `authorized` (+`recovered:true`); no encontrada => `error/NOT_CHARGED` (`retryable:true`); consulta falla => `unknown/UNKNOWN_RESULT`. Nunca se repite el cobro tras -2.
-- J4: -1 en pago/devolución: no se ejecutó, un reinit y UN reintento de la operación. -99: pudo cobrarse, reinit + consulta (nunca reintento ciego). `init()`: un único reintento con backoff (2 s) solo ante -1/-99; otros códigos (-18, -20, -40...) sin reintento. Tras fallo definitivo, enfriamiento de 5 s antes de otra secuencia de init (protege la cuenta del servicio de bloqueos). Nota: el plan Fase 3 cita también -16 para re-init; el contrato vinculante dice solo -1/-99, se sigue el contrato.
-- J5: Timeout de seguridad `callTimeoutMs` (180 s) por llamada al transporte: vencido se trata como -2 (consulta) para que `busy` nunca quede colgado. Código propio de transporte `-98` (excepción, `{}` inválido, fetch fallido, librería no cargada).
-- J6: `preflight` (CheckStatus antes de cobrar; -2/-3 abortan sin cobrar) implementado pero DESACTIVADO por defecto: activar tras validar fnDllCheckStatus con hardware (S4).
-- J7: Consulta: valores NULL se envían como `null`; si el servicio responde -3 se reintenta una vez con `""`. [SUPUESTO-HW] S4 (y S5 en HTTP): no se sabe cómo marshalea tpvpc-impl.js los nulos.
-- J8: [SUPUESTO-HW] S4: `RealJsTransport` solo usa la API documentada y obtiene la instancia por `impl`, `loader` (devuelve instancia o módulo con `TpvpcImplantado`), `window.tpvpcImpl` o `Tpvpc.TpvpcImplantado`. Deja el log de la librería DESACTIVADO (puede volcar argumentos con la clave). Cómo cargar el asset ESM aparte queda para la integración (Fase 2) al ver el fichero real.
-- J9: [SUPUESTO-HW] S5: `RealHttpTransport` asume POST application/json a `http://localhost:10305/`; método, ruta, cabeceras y CORS no están documentados y son configurables. No hay eventos asíncronos documentados por HTTP (`subscribeEvent` solo registra; `emit()` por si se descubre un canal). S1 (HTTPS->localhost, PNA) sin verificar.
-- J10: [SUPUESTO-HW] hora de consulta: las fechas "YYYYMMdd HHmmss" se calculan con la hora local del navegador y se asume que Redsys las interpreta en hora local del comercio.
-- J11: Las consultas devuelven `tarjeta` (PAN enmascarado) pero no `marcaTarjeta`: en un cobro recuperado `cardBrand` es null y `authCode` es el `codigoRespuesta` de la consulta (puede no coincidir con el de autorización original; el XML de pago es la fuente fiable). Se añaden campos extra a PayResult: `last4`, `recovered`, `retryable`, `warning` (AMOUNT_MISMATCH, MULTIPLE_AUTHORIZED), `detail` (solo unknown).
-- J12: Catálogo Anexo VI en `errors.js` normaliza códigos (`TPV-PC0074`, `TPVPC0074`, `TPV-PC_EMV0002` => sin guiones/subrayados) porque el manual es inconsistente. Se incluyen los códigos de operación/consulta/devolución; los de gestión de usuarios caen en el texto del XML. Códigos de denegación (Anexo VII) no mapeados: se muestra el código.
-- J13: Estado XML `G` se trata como denegada (plan §4.3), `T` como fallo técnico reintentable, `P`/otros como indeterminado (consulta).
+
+- J1: Lógica pura en `static/src/app/redsys/` (redsys_service, xml_parser, errors,
+  transports). Todos con `/** @odoo-module */` (el asset glob `static/src/**/*` solo
+  transpila los marcados) e imports relativos con `.js` (válidos en Odoo y en Node).
+  Tests sin Odoo: `node --test tests_js/` (ver `package.json` raíz con
+  `"type":"module"`; Node 18+, p. ej.
+  `docker run --rm -v $PWD:/m -w /m --entrypoint sh odoo_19-odoo node --test tests_js/`).
+  Los tests propios del servicio pasan; el total de `tests_js/` (con simulador e
+  integración) se verifica ejecutándolos.
+- J2: Estados: uninitialized, initializing, ready, paying, refunding, recovering,
+  failed. `isBusy()` = initializing/paying/refunding/recovering. `pay`/`refund` en busy
+  devuelven `{status:'error', errorCode:'BUSY'}` sin tocar el transporte; `query`
+  público y `checkStatus` tampoco interrumpen una operación (checkStatus devuelve el
+  último valor con `busy:true`).
+- J3: Recuperación -2 (y excepción/timeout de transporte, retorno 0 con XML ilegible,
+  estado P, TPV-PC0117/0118): `t0` antes de cobrar, consulta
+  `fnDllOperConsulta(null,null,reference,t0-10min,max(t0,now)+10min,'PAGO'|'DEVOLUCION',null,'0')`,
+  filtra de nuevo por `factura==reference`, recorre hasta 5 páginas. Autorizada =>
+  `authorized` (+`recovered:true`); no encontrada => `error/NOT_CHARGED`
+  (`retryable:true`); consulta falla => `unknown/UNKNOWN_RESULT`. Nunca se repite el
+  cobro tras -2.
+- J4: -1 en pago/devolución: no se ejecutó, un reinit y UN reintento de la operación.
+  -99: pudo cobrarse, reinit + consulta (nunca reintento ciego). `init()`: un único
+  reintento con backoff (2 s) solo ante -1/-99; otros códigos (-18, -20, -40...) sin
+  reintento. Tras fallo definitivo, enfriamiento de 5 s antes de otra secuencia de init
+  (protege la cuenta del servicio de bloqueos). Nota: el plan Fase 3 cita también -16
+  para re-init; el contrato vinculante dice solo -1/-99, se sigue el contrato.
+- J5: Timeout de seguridad `callTimeoutMs` (180 s) por llamada al transporte: vencido se
+  trata como -2 (consulta) para que `busy` nunca quede colgado. Código propio de
+  transporte `-98` (excepción, `{}` inválido, fetch fallido, librería no cargada).
+- J6: `preflight` (CheckStatus antes de cobrar; -2/-3 abortan sin cobrar) implementado
+  pero DESACTIVADO por defecto: activar tras validar fnDllCheckStatus con hardware (S4).
+- J7: Consulta: valores NULL se envían como `null`; si el servicio responde -3 se
+  reintenta una vez con `""`. [SUPUESTO-HW] S4 (y S5 en HTTP): no se sabe cómo marshalea
+  tpvpc-impl.js los nulos.
+- J8: [SUPUESTO-HW] S4: `RealJsTransport` solo usa la API documentada y obtiene la
+  instancia por `impl`, `loader` (devuelve instancia o módulo con `TpvpcImplantado`),
+  `window.tpvpcImpl` o `Tpvpc.TpvpcImplantado`. Deja el log de la librería DESACTIVADO
+  (puede volcar argumentos con la clave). Cómo cargar el asset ESM aparte queda para la
+  integración (Fase 2) al ver el fichero real.
+- J9: [SUPUESTO-HW] S5: `RealHttpTransport` asume POST application/json a
+  `http://localhost:10305/`; método, ruta, cabeceras y CORS no están documentados y son
+  configurables. No hay eventos asíncronos documentados por HTTP (`subscribeEvent` solo
+  registra; `emit()` por si se descubre un canal). S1 (HTTPS->localhost, PNA) sin
+  verificar.
+- J10: [SUPUESTO-HW] hora de consulta: las fechas "YYYYMMdd HHmmss" se calculan con la
+  hora local del navegador y se asume que Redsys las interpreta en hora local del
+  comercio.
+- J11: Las consultas devuelven `tarjeta` (PAN enmascarado) pero no `marcaTarjeta`: en un
+  cobro recuperado `cardBrand` es null y `authCode` es el `codigoRespuesta` de la
+  consulta (puede no coincidir con el de autorización original; el XML de pago es la
+  fuente fiable). Se añaden campos extra a PayResult: `last4`, `recovered`, `retryable`,
+  `warning` (AMOUNT_MISMATCH, MULTIPLE_AUTHORIZED), `detail` (solo unknown).
+- J12: Catálogo Anexo VI en `errors.js` normaliza códigos (`TPV-PC0074`, `TPVPC0074`,
+  `TPV-PC_EMV0002` => sin guiones/subrayados) porque el manual es inconsistente. Se
+  incluyen los códigos de operación/consulta/devolución; los de gestión de usuarios caen
+  en el texto del XML. Códigos de denegación (Anexo VII) no mapeados: se muestra el
+  código.
+- J13: Estado XML `G` se trata como denegada (plan §4.3), `T` como fallo técnico
+  reintentable, `P`/otros como indeterminado (consulta).
 
 ## Integración POS (agente Integración POS)
-- I1 (carga de tpvpc-impl.js): NO va en el bundle. Fichero esperado en `static/lib/tpvpc/tpvpc-impl.js` (ver README allí). `loadTpvpcLibrary` (services/redsys_tpvpc_service.js) lo carga bajo demanda solo con transporte `js`: `import()` ESM y, si no expone `TpvpcImplantado`, `loadJS` clásico (globales). Si falta, el POS arranca y el datáfono real da -98 "tpvpc-impl.js no está cargado". El manifest no cambia (el glob `static/src/**/*` sigue igual). [SUPUESTO-HW] S4.
-- I2 (servicio): `redsys_tpvpc` (dependencias `pos`, `orm`; el servicio no se usa antes de que el POS esté listo). Crea el RedsysService por método de pago al primer uso, pide la clave con `redsys_get_signature_key(config_id)` y la mantiene solo en memoria. Mock solo con `redsys_simulation` Y `redsys_sim=1` en la URL (SIM6, `chooseTransportKind` + test); monta la consola con el mismo doble puerta. Al arrancar: init, recuperación de líneas a medias de todos los pedidos abiertos y checkStatus; luego checkStatus cada 45 s (nunca con operación o `paymentTerminalInProgress`). Clic en el indicador: re-init (solo manual) + checkStatus.
-- I3 (línea de pago): referencia `ODOO-<8 hex>` desde el uuid, escrita en `payment_ref_no` y `redsys_reference` ANTES de cobrar. Eventos: cardReading(1) -> `waitingCard`, cardOk(4) -> `waiting` (desaparece el botón Cancelar al leerse la tarjeta). Autorizado -> `transaction_id`=pedido, `redsys_rts`, `redsys_xml`, `redsys_state`, `card_brand/card_type`, `card_no`=last4, `payment_method_authcode`, `setReceiptInfo` (marca, últimos 4, autorización, pedido, fecha). Denegado/error -> `retry` + diálogo. Desconocido (o autorizada con AMOUNT_MISMATCH/MULTIPLE_AUTHORIZED) -> `redsys_state='unknown'` y `force_done` (parche `PosPayment.handlePaymentResponse`); no se puede iniciar otro cobro Redsys mientras haya líneas sin resolver (`unresolvedLines`).
-- I4 (Forzar): parche de `PaymentScreen.sendForceDone` para Redsys: bloqueado mientras el servicio está ocupado; antes de pedir confirmación manual consulta a Redsys por referencia (autorizada -> done; no cobrada -> retry); si sigue sin saberse, diálogo "Está autorizada" y la línea queda `done` con `redsys_state='unknown'` (conciliación).
-- I5 (cancelar): `sendPaymentCancel` devuelve false mientras `isBusy()` (y restaura waiting/waitingCard, que el core deja en waitingCancel) explicando que se cancele en el datáfono; si la línea puede estar cobrada, tampoco.
-- I6 (recarga): `PaymentScreen` `onMounted` -> `recoverOrder(order)` (también en el arranque del servicio para todos los pedidos abiertos). Criterio `needsRecovery`: método Redsys, estado waiting/waitingCard/waitingCancel con referencia, o `redsys_state=='unknown'`. Consulta por referencia en ventana +-10 min alrededor de `payment_date`; `interpretQuery`: autorizada (y mismo importe) -> done con datos de la consulta (sin marca ni XML: J11); sin operación autorizada/denegada -> `retry` y `redsys_state=false`; en proceso o consulta fallida -> sigue `unknown`. Durante la recuperación `pos.paymentTerminalInProgress=true`.
-- I7 (devoluciones): `PosPayment.updateRefundPaymentLine` guarda en `uiState.redsysRefund` {pedido, rts, amount, paymentUuid} del original (solo si `canRefundRedsysLine`: método Redsys, `redsys_state=='authorized'`, pedido y RTS). `PaymentScreen.addNewPaymentLine` en pedido de devolución con método Redsys: busca el cobro Redsys del pedido original (no usado ya en este pedido), importe `-min(pendiente, original)`; si no hay original Redsys o no tiene pedido/RTS, no añade la línea y lo explica. `sendPaymentRequest` con importe negativo llama a `refund()`; `refundInfoFor` recompone el enlace tras recarga. Parcial/total, nunca > original (`validateRefund`). No se auto-añaden líneas Redsys al pulsar "Pay" en la devolución (a diferencia de razorpay): el cajero elige el método. Línea de devolución: `redsys_state='refund'`, `transaction_id`=pedido de la devolución.
-- I8 (sin texto "Devolver"): el único elemento visual nuevo es el indicador de la barra superior (icono, sin texto); no se depende de `hide_return_button`.
-- I9 (indicador): componente `RedsysStatus` inyectado en `Navbar` (xml/redsys_status.xml, `status-buttons`), una tarjeta por método Redsys de la caja (verde/ámbar/rojo/gris, título con el texto).
-- Peticiones al Orquestador/Backend: (a) campo en `pos.payment` que enlace la devolución con el pedido original (p. ej. `redsys_original_pedido`) para acumular devoluciones previas y limitar a lo pendiente en el cliente (ahora solo lo impone Redsys, TPV-PC0100 y el límite por original en el mismo pedido); (b) el wizard/`hide_return_button` de luis_botello_extend_pos_conventional no se ha probado en navegador.
-- No verificado (sin navegador/hardware): tour o test de POS en navegador (no hay Chrome en el entorno; solo se ha comprobado que el bundle `point_of_sale._assets_pos` compila con todos los ficheros y la plantilla, y que el módulo se instala con sus 13 tests Python en verde); el comportamiento real de `tpvpc-impl.js` (S4), eventos 1/4 con hardware (S4/S8a), HTTPS->localhost (S1), formato de fecha del recibo (S7), e `import()` desde el bundle con el fichero real. Textos del indicador/diálogos en español fijo (sin `_t`, como los mensajes del servicio). Tests: `node --test tests_js/` -> 113 verdes (incluye `tests_js/pos/`).
-- I10 (devoluciones acumuladas): nuevo campo `pos.payment.redsys_original_pedido` (Char, `copy=False`, índice btree_not_null) = pedido Redsys del cobro original. Backend: en `REDSYS_LOCKED_FIELDS` (no se puede modificar en líneas authorized/unknown/refund; se escribe al crear la línea; se carga al POS por D11). Cliente: se rellena al crear la línea de devolución (`addNewPaymentLine`, `updateRefundPaymentLine`), al iniciar la devolución (antes de cobrar, para sobrevivir a recargas) y en `authorizedVals`/`unknown` de una devolución (opción `originalPedido`). `previousRefunds(orig, payments)` suma devoluciones con `redsys_state` refund/unknown, importe negativo, mismo pedido original y mismo método sobre todas las `pos.payment` cargadas; `refundableAmount` y `validateRefund(info, amount, alreadyRefunded)` lo usan. Límite: solo cuenta pedidos cargados en el POS; TPV-PC0100 sigue siendo la garantía final. Las líneas `refund` anteriores a este campo no lo tienen y no se acumulan. 116 tests JS y 14 tests Python en verde.
+
+- I1 (carga de tpvpc-impl.js): NO va en el bundle. Fichero esperado en
+  `static/lib/tpvpc/tpvpc-impl.js` (ver README allí). `loadTpvpcLibrary`
+  (services/redsys_tpvpc_service.js) lo carga bajo demanda solo con transporte `js`:
+  `import()` ESM y, si no expone `TpvpcImplantado`, `loadJS` clásico (globales). Si
+  falta, el POS arranca y el datáfono real da -98 "tpvpc-impl.js no está cargado". El
+  manifest no cambia (el glob `static/src/**/*` sigue igual). [SUPUESTO-HW] S4.
+- I2 (servicio): `redsys_tpvpc` (dependencias `pos`, `orm`; el servicio no se usa antes
+  de que el POS esté listo). Crea el RedsysService por método de pago al primer uso,
+  pide la clave con `redsys_get_signature_key(config_id)` y la mantiene solo en memoria.
+  Mock solo con `redsys_simulation` Y `redsys_sim=1` en la URL (SIM6,
+  `chooseTransportKind` + test); monta la consola con el mismo doble puerta. Al
+  arrancar: init, recuperación de líneas a medias de todos los pedidos abiertos y
+  checkStatus; luego checkStatus cada 45 s (nunca con operación o
+  `paymentTerminalInProgress`). Clic en el indicador: re-init (solo manual) +
+  checkStatus.
+- I3 (línea de pago): referencia `ODOO-<8 hex>` desde el uuid, escrita en
+  `payment_ref_no` y `redsys_reference` ANTES de cobrar. Eventos: cardReading(1) ->
+  `waitingCard`, cardOk(4) -> `waiting` (desaparece el botón Cancelar al leerse la
+  tarjeta). Autorizado -> `transaction_id`=pedido, `redsys_rts`, `redsys_xml`,
+  `redsys_state`, `card_brand/card_type`, `card_no`=last4, `payment_method_authcode`,
+  `setReceiptInfo` (marca, últimos 4, autorización, pedido, fecha). Denegado/error ->
+  `retry` + diálogo. Desconocido (o autorizada con AMOUNT_MISMATCH/MULTIPLE_AUTHORIZED)
+  -> `redsys_state='unknown'` y `force_done` (parche
+  `PosPayment.handlePaymentResponse`); no se puede iniciar otro cobro Redsys mientras
+  haya líneas sin resolver (`unresolvedLines`).
+- I4 (Forzar): parche de `PaymentScreen.sendForceDone` para Redsys: bloqueado mientras
+  el servicio está ocupado; antes de pedir confirmación manual consulta a Redsys por
+  referencia (autorizada -> done; no cobrada -> retry); si sigue sin saberse, diálogo
+  "Está autorizada" y la línea queda `done` con `redsys_state='unknown'` (conciliación).
+- I5 (cancelar): `sendPaymentCancel` devuelve false mientras `isBusy()` (y restaura
+  waiting/waitingCard, que el core deja en waitingCancel) explicando que se cancele en
+  el datáfono; si la línea puede estar cobrada, tampoco.
+- I6 (recarga): `PaymentScreen` `onMounted` -> `recoverOrder(order)` (también en el
+  arranque del servicio para todos los pedidos abiertos). Criterio `needsRecovery`:
+  método Redsys, estado waiting/waitingCard/waitingCancel con referencia, o
+  `redsys_state=='unknown'`. Consulta por referencia en ventana +-10 min alrededor de
+  `payment_date`; `interpretQuery`: autorizada (y mismo importe) -> done con datos de la
+  consulta (sin marca ni XML: J11); sin operación autorizada/denegada -> `retry` y
+  `redsys_state=false`; en proceso o consulta fallida -> sigue `unknown`. Durante la
+  recuperación `pos.paymentTerminalInProgress=true`.
+- I7 (devoluciones): `PosPayment.updateRefundPaymentLine` guarda en
+  `uiState.redsysRefund` {pedido, rts, amount, paymentUuid} del original (solo si
+  `canRefundRedsysLine`: método Redsys, `redsys_state=='authorized'`, pedido y RTS).
+  `PaymentScreen.addNewPaymentLine` en pedido de devolución con método Redsys: busca el
+  cobro Redsys del pedido original (no usado ya en este pedido), importe
+  `-min(pendiente, original)`; si no hay original Redsys o no tiene pedido/RTS, no añade
+  la línea y lo explica. `sendPaymentRequest` con importe negativo llama a `refund()`;
+  `refundInfoFor` recompone el enlace tras recarga. Parcial/total, nunca > original
+  (`validateRefund`). No se auto-añaden líneas Redsys al pulsar "Pay" en la devolución
+  (a diferencia de razorpay): el cajero elige el método. Línea de devolución:
+  `redsys_state='refund'`, `transaction_id`=pedido de la devolución.
+- I8 (sin texto "Devolver"): el único elemento visual nuevo es el indicador de la barra
+  superior (icono, sin texto); no se depende de `hide_return_button`.
+- I9 (indicador): componente `RedsysStatus` inyectado en `Navbar`
+  (xml/redsys_status.xml, `status-buttons`), una tarjeta por método Redsys de la caja
+  (verde/ámbar/rojo/gris, título con el texto).
+- Peticiones al Orquestador/Backend: (a) campo en `pos.payment` que enlace la devolución
+  con el pedido original (p. ej. `redsys_original_pedido`) para acumular devoluciones
+  previas y limitar a lo pendiente en el cliente (ahora solo lo impone Redsys,
+  TPV-PC0100 y el límite por original en el mismo pedido); (b) el
+  wizard/`hide_return_button` de luis_botello_extend_pos_conventional no se ha probado
+  en navegador.
+- No verificado (sin navegador/hardware): tour o test de POS en navegador (no hay Chrome
+  en el entorno; solo se ha comprobado que el bundle `point_of_sale._assets_pos` compila
+  con todos los ficheros y la plantilla, y que el módulo se instala con sus 13 tests
+  Python en verde); el comportamiento real de `tpvpc-impl.js` (S4), eventos 1/4 con
+  hardware (S4/S8a), HTTPS->localhost (S1), formato de fecha del recibo (S7), e
+  `import()` desde el bundle con el fichero real. Textos del indicador/diálogos en
+  español fijo (sin `_t`, como los mensajes del servicio). Tests:
+  `node --test tests_js/` -> 113 verdes (incluye `tests_js/pos/`).
+- I10 (devoluciones acumuladas): nuevo campo `pos.payment.redsys_original_pedido` (Char,
+  `copy=False`, índice btree_not_null) = pedido Redsys del cobro original. Backend: en
+  `REDSYS_LOCKED_FIELDS` (no se puede modificar en líneas authorized/unknown/refund; se
+  escribe al crear la línea; se carga al POS por D11). Cliente: se rellena al crear la
+  línea de devolución (`addNewPaymentLine`, `updateRefundPaymentLine`), al iniciar la
+  devolución (antes de cobrar, para sobrevivir a recargas) y en
+  `authorizedVals`/`unknown` de una devolución (opción `originalPedido`).
+  `previousRefunds(orig, payments)` suma devoluciones con `redsys_state` refund/unknown,
+  importe negativo, mismo pedido original y mismo método sobre todas las `pos.payment`
+  cargadas; `refundableAmount` y `validateRefund(info, amount, alreadyRefunded)` lo
+  usan. Límite: solo cuenta pedidos cargados en el POS; TPV-PC0100 sigue siendo la
+  garantía final. Las líneas `refund` anteriores a este campo no lo tienen y no se
+  acumulan. 116 tests JS y 14 tests Python en verde.
 
 ## Correcciones QA backend
 
-- QA-19 (idempotencia, enmienda D10): `pos.payment.write` compara cada clave de `REDSYS_LOCKED_FIELDS`/`redsys_state` con el valor actual; reenviar los mismos valores (`[1, id, todos los campos]`) es un no-op. Solo un cambio real prohíbe (UserError). En una línea `unknown` los campos `transaction_id/payment_ref_no/redsys_rts/redsys_xml/redsys_reference/redsys_original_pedido` se pueden COMPLETAR si estaban vacíos (resolución tras recarga); importe, método y pedido POS nunca cambian. `unknown -> otro estado` sigue siendo la única transición de estado.
-- QA-20 (validación servidor): en `create` y en cualquier `write` con cambio real, una línea `authorized`/`refund` exige `redsys_xml` parseable (lxml sin entidades ni red) con `estado=F`, `resultado=Autorizada` (sin distinguir mayúsculas), `importe == abs(amount)` (2 decimales), `pedido == transaction_id`, `identificadorRTS == redsys_rts`, `factura == redsys_reference` (si ambos existen) y `comercio`/`terminal` iguales a los del método (si el XML los trae). Si no, `ValidationError`. Unicidad por método de `transaction_id` y de `redsys_rts` entre líneas authorized/refund, salvo devoluciones con `redsys_original_pedido` (pueden compartir ids con el cobro y entre sí). Las líneas `unknown` no exigen XML. No se verifica la `firma` (el manual no documenta el algoritmo de la respuesta: pendiente) ni se rechaza la marca del mock (QA-10 es del cliente; el servidor podría rechazar `<firma>MOCK</firma>` si `redsys_simulation` es falso: no hecho).
-- QA-16: `redsys_signature_key` pasa a `groups='point_of_sale.group_pos_manager'`. El RPC la sigue leyendo con `sudo()`. El formulario del método ya lo ven los managers.
-- QA-17 (criterio del RPC `redsys_get_signature_key`): exige `group_pos_user`; la config debe tener `current_session_id` no cerrada y su responsable (`session.user_id`) debe ser el usuario que llama. `group_pos_manager` puede pedirla de cualquier config con sesión abierta. Sin sesión abierta o sesión de otro usuario: AccessError. Config inexistente: `{}`. Limitación: dos cajeros distintos que compartan una sesión abierta por un tercero no la obtendrían (en Odoo la sesión es de un usuario).
-- QA-21: nuevo estado `redsys_state='not_charged'` ("Reconciled: not charged", protegido igual que los demás: no se borra ni se modifica), campos de auditoría `redsys_resolution_note`, `redsys_resolved_by_id`, `redsys_resolved_date` (solo los escribe el método) y `pos.payment.redsys_reconcile(resolution, note)`: solo `group_pos_manager`, nota obligatoria, solo líneas `unknown`; `charged` -> `authorized` (`refund` si importe negativo) saltando la validación de XML (se concilia contra el portal), `not_charged` -> `not_charged`. Se escribe con el `write` base (la única vía que lo permite); un cajero no puede escribir `not_charged` ni los campos de auditoría. UI: wizard `pos.payment.redsys.reconcile` (acción enlazada a la lista de pagos, solo managers), menú Punto de venta > "Redsys payments to reconcile" (managers; filtro `redsys_unknown` activo por defecto) y filtros `redsys_unknown`/`redsys_reconciled` en la búsqueda de pagos. Una línea `not_charged` sigue sumando en `amount_paid` del pedido: corregir el pedido es manual (límite). Falta (cliente/otro agente) el aviso al cerrar sesión con líneas `unknown`.
-- Hardening adicional: el bypass `redsys_force_unlink` ya no sirve desde RPC; exige además `env.su` (antes cualquier cliente podía enviar ese contexto y saltarse D10).
-- QA-18 NO corregido (el cliente usa `unknown -> False` con 'not_charged'); mitigado: existe la conciliación auditada.
-- Tests: `test_qa_known_issue_*` reescritos como `test_qa_16/17/19/20/21...` afirmando el comportamiento correcto (el de QA-18 se mantiene documentado). Los XML de los tests salen de `tests/redsys_xml.py`. 34 tests Python en verde.
+- QA-19 (idempotencia, enmienda D10): `pos.payment.write` compara cada clave de
+  `REDSYS_LOCKED_FIELDS`/`redsys_state` con el valor actual; reenviar los mismos valores
+  (`[1, id, todos los campos]`) es un no-op. Solo un cambio real prohíbe (UserError). En
+  una línea `unknown` los campos
+  `transaction_id/payment_ref_no/redsys_rts/redsys_xml/redsys_reference/redsys_original_pedido`
+  se pueden COMPLETAR si estaban vacíos (resolución tras recarga); importe, método y
+  pedido POS nunca cambian. `unknown -> otro estado` sigue siendo la única transición de
+  estado.
+- QA-20 (validación servidor): en `create` y en cualquier `write` con cambio real, una
+  línea `authorized`/`refund` exige `redsys_xml` parseable (lxml sin entidades ni red)
+  con `estado=F`, `resultado=Autorizada` (sin distinguir mayúsculas),
+  `importe == abs(amount)` (2 decimales), `pedido == transaction_id`,
+  `identificadorRTS == redsys_rts`, `factura == redsys_reference` (si ambos existen) y
+  `comercio`/`terminal` iguales a los del método (si el XML los trae). Si no,
+  `ValidationError`. Unicidad por método de `transaction_id` y de `redsys_rts` entre
+  líneas authorized/refund, salvo devoluciones con `redsys_original_pedido` (pueden
+  compartir ids con el cobro y entre sí). Las líneas `unknown` no exigen XML. No se
+  verifica la `firma` (el manual no documenta el algoritmo de la respuesta: pendiente)
+  ni se rechaza la marca del mock (QA-10 es del cliente; el servidor podría rechazar
+  `<firma>MOCK</firma>` si `redsys_simulation` es falso: no hecho).
+- QA-16: `redsys_signature_key` pasa a `groups='point_of_sale.group_pos_manager'`. El
+  RPC la sigue leyendo con `sudo()`. El formulario del método ya lo ven los managers.
+- QA-17 (criterio del RPC `redsys_get_signature_key`): exige `group_pos_user`; la config
+  debe tener `current_session_id` no cerrada y su responsable (`session.user_id`) debe
+  ser el usuario que llama. `group_pos_manager` puede pedirla de cualquier config con
+  sesión abierta. Sin sesión abierta o sesión de otro usuario: AccessError. Config
+  inexistente: `{}`. Limitación: dos cajeros distintos que compartan una sesión abierta
+  por un tercero no la obtendrían (en Odoo la sesión es de un usuario).
+- QA-21: nuevo estado `redsys_state='not_charged'` ("Reconciled: not charged", protegido
+  igual que los demás: no se borra ni se modifica), campos de auditoría
+  `redsys_resolution_note`, `redsys_resolved_by_id`, `redsys_resolved_date` (solo los
+  escribe el método) y `pos.payment.redsys_reconcile(resolution, note)`: solo
+  `group_pos_manager`, nota obligatoria, solo líneas `unknown`; `charged` ->
+  `authorized` (`refund` si importe negativo) saltando la validación de XML (se concilia
+  contra el portal), `not_charged` -> `not_charged`. Se escribe con el `write` base (la
+  única vía que lo permite); un cajero no puede escribir `not_charged` ni los campos de
+  auditoría. UI: wizard `pos.payment.redsys.reconcile` (acción enlazada a la lista de
+  pagos, solo managers), menú Punto de venta > "Redsys payments to reconcile" (managers;
+  filtro `redsys_unknown` activo por defecto) y filtros
+  `redsys_unknown`/`redsys_reconciled` en la búsqueda de pagos. Una línea `not_charged`
+  sigue sumando en `amount_paid` del pedido: corregir el pedido es manual (límite).
+  Falta (cliente/otro agente) el aviso al cerrar sesión con líneas `unknown`.
+- Hardening adicional: el bypass `redsys_force_unlink` ya no sirve desde RPC; exige
+  además `env.su` (antes cualquier cliente podía enviar ese contexto y saltarse D10).
+- QA-18 NO corregido (el cliente usa `unknown -> False` con 'not_charged'); mitigado:
+  existe la conciliación auditada.
+- Tests: `test_qa_known_issue_*` reescritos como `test_qa_16/17/19/20/21...` afirmando
+  el comportamiento correcto (el de QA-18 se mantiene documentado). Los XML de los tests
+  salen de `tests/redsys_xml.py`. 34 tests Python en verde.
 
 ## Correcciones QA cliente
-- QA-01 (recarga con el cobro aún en el datáfono): `interpretQuery` ya NO concluye `not_charged` ante una consulta vacía salvo que (a) hayan pasado `RECOVERY_GRACE_MS` (2 min) desde el INICIO del cobro y (b) `checkStatus` devuelva 0 (datáfono sano). Sin esas condiciones -> `unknown` con `waiting` y el servicio reconsulta solo (`retryInMs`, máx. 8 veces, timer `unref`). Una denegación registrada en Redsys (G / DENEGADA) sí es evidencia cierta -> `retry` automático. Aun pasada la gracia, la línea queda bloqueada (`unknown`/`force_done`) y solo el cajero la libera (`releaseLine`) tras el diálogo "No se cobró: permitir reintentar" en Forzar. El inicio del cobro (`redsys_start:<referencia>` -> ms, nada secreto) se guarda con `makeStartMarks` en `localStorage` (única excepción a la higiene estática; con fallo/sin storage cae a memoria y la gracia empieza en la primera recuperación de la sesión, nunca antes). `payment_date` NO sirve de base: es la creación de la línea, no el envío.
-- QA-02 (timeout local): `-98` (timeout `callTimeoutMs`, excepción, fetch fallido) ya no es un `-2` verificado: `_recover(..., {strict:true})` solo acepta lo que la consulta ENCUENTRE (autorizada/denegada/P) y si no, `unknown` (nunca `NOT_CHARGED`). Un `-2` real de la DLL y retorno 0/-99 conservan la política J3. `isBusy()` queda coherente: tras un timeout local de pay/refund el servicio sigue ocupado (`_orphan`) hasta el retorno tardío de la DLL o `orphanMs` (5 min); la máquina de estados vuelve a `ready`. Efecto: ya no depende del guardián -3 del datáfono (S8f) para frenar el 2º cobro (devuelve BUSY sin tocar el transporte).
-- QA-04: `_recover` coteja el importe de la operación recuperada con el de la petición (`AMOUNT_MISMATCH` -> `interpretPayResult` lo trata como `unknown`). Importe ilegible = distinto; ausente = no se coteja.
-- QA-13: `PaymentRedsysTpvpc.sendPaymentRequest` es idempotente por línea (mapa `uuid -> Promise`): el 2º clic devuelve la misma promesa y repone el estado en vivo, sin llamar a `super` ni al servicio. BUSY de OTRA línea sigue siendo `retry`.
-- QA-11: `_run` rechaza líneas `unknown` (aviso, `false` -> `force_done`) y trata `authorized`/`refund` como ya hechas (`true`, sin tocar el datáfono).
-- QA-23: `PaymentScreen.deletePaymentLine` se sobrescribe; `canDeleteRedsysLine` (lógica pura) prohíbe borrar líneas Redsys con `redsys_state` unknown/authorized/refund, `force_done`, estados en curso o cobro activo en esta pestaña. `retry` limpio sin estado Redsys sí se borra. El botón de la plantilla del core sigue visible (no es nuestra); la acción avisa.
-- QA-22: `RedsysService` acepta `locks` (la fábrica pasa `navigator.locks`); pay/refund/query toman `redsys-<comercio>-<terminal>` con `ifAvailable` durante toda la operación (incluida la recuperación interna). Otra pestaña recibe BUSY sin tocar el datáfono. Sin Web Locks o si `request` falla: degradación al guardián del datáfono (como antes). No hay BroadcastChannel (no hace falta con locks y evitaría una segunda vía de estado).
-- QA-14: contador de bloqueos en `recoverOrder` (el primero guarda el valor previo de `paymentTerminalInProgress`, el último lo restaura).
-- QA-15: `recoverLine` salta (`skipped`) las líneas con cobro en curso en esta pestaña (`beginLine/endLine`) y todo método con el servicio ocupado: no marca `unknown` una línea viva.
-- QA-24: `refundInfoFor` resuelve el original por `redsys_original_pedido` de la línea (la tarjeta elegida) y su importe como límite; sin pedido persistido solo si hay UNA tarjeta Redsys válida; si no, rechaza (no adivina).
-- QA-10 (cliente): el `<firma>` del simulador lleva el prefijo `MOCK` (`MOCK` + 36 hex) y se guarda en `redsys_xml`. El servidor aún debe rechazar líneas con esa marca si `redsys_simulation` es falso (QA-20, backend); no hay insignia fija en el POS (no hecho).
-- Tests: `tests_js/` 0 fallos, 8 `todo` (QA-03/05/06/07/08/09/12: BAJOS fuera de alcance). Los tests QA-01/02/04/10/11/13/14/15/22/23/24 son normales. Se actualizaron los que fijaban el comportamiento anterior (`-98` => NOT_CHARGED, 2º cobro por el guardián -3, consulta vacía inmediata => not_charged, firma de 40 hex) y un test con falso positivo Luhn dependiente de la hora.
-- J11 (enmienda, conflicto cliente/servidor): la recuperación por consulta ya NO guarda `redsys_xml` vacío: `parseQueryXml` devuelve por operación `rawXml` = `<operacion>…</operacion>` tal como lo envió la consulta, más la `<firma>` de `<resultadoConsulta>`; `_recover` e `interpretQuery` lo usan como `rawXml` (se persiste en `redsys_xml`). El backend (`_redsys_parse_xml`/QA-20) acepta los dos formatos (pago `<resultadoOperacion>` y consulta `<operacion>`): aplana por etiqueta y exige los mismos chequeos (estado F, resultado Autorizada en cualquier caso, importe, pedido, RTS, factura, terminal/comercio si vienen, unicidad). Los cobros normales no se relajan; una operación de consulta incoherente se rechaza igual. Las líneas `unknown` siguen sin exigir XML. Tests: `test_qa_20_recovered_by_query_xml_*` (XML en el formato real de ConsultasV2d2/simulador) y test JS de `recoverOrder` + `parseQueryXml`.
-- QA-10 (servidor): una línea authorized/refund cuyo XML trae `<firma>` que empieza por `MOCK` se rechaza si el método no tiene `redsys_simulation` (también para el XML de consulta, que lleva la firma de la consulta).
-- QA-18 (decisión): se mantiene `unknown -> False` (no se unifica con `not_charged`) porque es la liberación del CAJERO tras una denegación cierta de Redsys (G/DENEGADA) o tras confirmar en el diálogo de Forzar; `not_charged` exige manager + nota y deja auditoría (`redsys_reconcile`) y un cajero no puede escribirlo. La línea liberada no queda como cobro ni protegida (no hay estado), por lo que el POS puede reintentar o borrarla; el riesgo residual (cajero que libera erróneamente) se mitiga con el diálogo y la gracia de 2 min (QA-01).
+
+- QA-01 (recarga con el cobro aún en el datáfono): `interpretQuery` ya NO concluye
+  `not_charged` ante una consulta vacía salvo que (a) hayan pasado `RECOVERY_GRACE_MS`
+  (2 min) desde el INICIO del cobro y (b) `checkStatus` devuelva 0 (datáfono sano). Sin
+  esas condiciones -> `unknown` con `waiting` y el servicio reconsulta solo
+  (`retryInMs`, máx. 8 veces, timer `unref`). Una denegación registrada en Redsys (G /
+  DENEGADA) sí es evidencia cierta -> `retry` automático. Aun pasada la gracia, la línea
+  queda bloqueada (`unknown`/`force_done`) y solo el cajero la libera (`releaseLine`)
+  tras el diálogo "No se cobró: permitir reintentar" en Forzar. El inicio del cobro
+  (`redsys_start:<referencia>` -> ms, nada secreto) se guarda con `makeStartMarks` en
+  `localStorage` (única excepción a la higiene estática; con fallo/sin storage cae a
+  memoria y la gracia empieza en la primera recuperación de la sesión, nunca antes).
+  `payment_date` NO sirve de base: es la creación de la línea, no el envío.
+- QA-02 (timeout local): `-98` (timeout `callTimeoutMs`, excepción, fetch fallido) ya no
+  es un `-2` verificado: `_recover(..., {strict:true})` solo acepta lo que la consulta
+  ENCUENTRE (autorizada/denegada/P) y si no, `unknown` (nunca `NOT_CHARGED`). Un `-2`
+  real de la DLL y retorno 0/-99 conservan la política J3. `isBusy()` queda coherente:
+  tras un timeout local de pay/refund el servicio sigue ocupado (`_orphan`) hasta el
+  retorno tardío de la DLL o `orphanMs` (5 min); la máquina de estados vuelve a `ready`.
+  Efecto: ya no depende del guardián -3 del datáfono (S8f) para frenar el 2º cobro
+  (devuelve BUSY sin tocar el transporte).
+- QA-04: `_recover` coteja el importe de la operación recuperada con el de la petición
+  (`AMOUNT_MISMATCH` -> `interpretPayResult` lo trata como `unknown`). Importe ilegible
+  = distinto; ausente = no se coteja.
+- QA-13: `PaymentRedsysTpvpc.sendPaymentRequest` es idempotente por línea (mapa
+  `uuid -> Promise`): el 2º clic devuelve la misma promesa y repone el estado en vivo,
+  sin llamar a `super` ni al servicio. BUSY de OTRA línea sigue siendo `retry`.
+- QA-11: `_run` rechaza líneas `unknown` (aviso, `false` -> `force_done`) y trata
+  `authorized`/`refund` como ya hechas (`true`, sin tocar el datáfono).
+- QA-23: `PaymentScreen.deletePaymentLine` se sobrescribe; `canDeleteRedsysLine` (lógica
+  pura) prohíbe borrar líneas Redsys con `redsys_state` unknown/authorized/refund,
+  `force_done`, estados en curso o cobro activo en esta pestaña. `retry` limpio sin
+  estado Redsys sí se borra. El botón de la plantilla del core sigue visible (no es
+  nuestra); la acción avisa.
+- QA-22: `RedsysService` acepta `locks` (la fábrica pasa `navigator.locks`);
+  pay/refund/query toman `redsys-<comercio>-<terminal>` con `ifAvailable` durante toda
+  la operación (incluida la recuperación interna). Otra pestaña recibe BUSY sin tocar el
+  datáfono. Sin Web Locks o si `request` falla: degradación al guardián del datáfono
+  (como antes). No hay BroadcastChannel (no hace falta con locks y evitaría una segunda
+  vía de estado).
+- QA-14: contador de bloqueos en `recoverOrder` (el primero guarda el valor previo de
+  `paymentTerminalInProgress`, el último lo restaura).
+- QA-15: `recoverLine` salta (`skipped`) las líneas con cobro en curso en esta pestaña
+  (`beginLine/endLine`) y todo método con el servicio ocupado: no marca `unknown` una
+  línea viva.
+- QA-24: `refundInfoFor` resuelve el original por `redsys_original_pedido` de la línea
+  (la tarjeta elegida) y su importe como límite; sin pedido persistido solo si hay UNA
+  tarjeta Redsys válida; si no, rechaza (no adivina).
+- QA-10 (cliente): el `<firma>` del simulador lleva el prefijo `MOCK` (`MOCK` + 36 hex)
+  y se guarda en `redsys_xml`. El servidor aún debe rechazar líneas con esa marca si
+  `redsys_simulation` es falso (QA-20, backend); no hay insignia fija en el POS (no
+  hecho).
+- Tests: `tests_js/` 0 fallos, 8 `todo` (QA-03/05/06/07/08/09/12: BAJOS fuera de
+  alcance). Los tests QA-01/02/04/10/11/13/14/15/22/23/24 son normales. Se actualizaron
+  los que fijaban el comportamiento anterior (`-98` => NOT_CHARGED, 2º cobro por el
+  guardián -3, consulta vacía inmediata => not_charged, firma de 40 hex) y un test con
+  falso positivo Luhn dependiente de la hora.
+- J11 (enmienda, conflicto cliente/servidor): la recuperación por consulta ya NO guarda
+  `redsys_xml` vacío: `parseQueryXml` devuelve por operación `rawXml` =
+  `<operacion>…</operacion>` tal como lo envió la consulta, más la `<firma>` de
+  `<resultadoConsulta>`; `_recover` e `interpretQuery` lo usan como `rawXml` (se
+  persiste en `redsys_xml`). El backend (`_redsys_parse_xml`/QA-20) acepta los dos
+  formatos (pago `<resultadoOperacion>` y consulta `<operacion>`): aplana por etiqueta y
+  exige los mismos chequeos (estado F, resultado Autorizada en cualquier caso, importe,
+  pedido, RTS, factura, terminal/comercio si vienen, unicidad). Los cobros normales no
+  se relajan; una operación de consulta incoherente se rechaza igual. Las líneas
+  `unknown` siguen sin exigir XML. Tests: `test_qa_20_recovered_by_query_xml_*` (XML en
+  el formato real de ConsultasV2d2/simulador) y test JS de `recoverOrder` +
+  `parseQueryXml`.
+- QA-10 (servidor): una línea authorized/refund cuyo XML trae `<firma>` que empieza por
+  `MOCK` se rechaza si el método no tiene `redsys_simulation` (también para el XML de
+  consulta, que lleva la firma de la consulta).
+- QA-18 (decisión): se mantiene `unknown -> False` (no se unifica con `not_charged`)
+  porque es la liberación del CAJERO tras una denegación cierta de Redsys (G/DENEGADA) o
+  tras confirmar en el diálogo de Forzar; `not_charged` exige manager + nota y deja
+  auditoría (`redsys_reconcile`) y un cajero no puede escribirlo. La línea liberada no
+  queda como cobro ni protegida (no hay estado), por lo que el POS puede reintentar o
+  borrarla; el riesgo residual (cajero que libera erróneamente) se mitiga con el diálogo
+  y la gracia de 2 min (QA-01).
 
 ## Correcciones QA ronda 3 (informe docs/qa_report2.md)
 
-Verificado leyendo el core 19 (sin navegador): `PosStore.onDeleteOrder` -> `beforeDeleteOrder`; `deleteOrders` -> `_onBeforeDeleteOrder` por pedido (y `action_pos_order_cancel` directo por `open_order_ids`); `OrderPaymentValidation.validateOrder` llama a `isOrderValid` ANTES de eliminar las líneas `!isDone()` (el único otro `removePaymentline` del core con `amount === 0` en `finalizeValidation` es un código muerto: `!line.amount === 0` es siempre falso). La guarda de `isOrderValid` llega, por tanto, antes de cualquier borrado, también en pago rápido (`validateOrderFast`) y en validación forzada.
+Verificado leyendo el core 19 (sin navegador): `PosStore.onDeleteOrder` ->
+`beforeDeleteOrder`; `deleteOrders` -> `_onBeforeDeleteOrder` por pedido (y
+`action_pos_order_cancel` directo por `open_order_ids`);
+`OrderPaymentValidation.validateOrder` llama a `isOrderValid` ANTES de eliminar las
+líneas `!isDone()` (el único otro `removePaymentline` del core con `amount === 0` en
+`finalizeValidation` es un código muerto: `!line.amount === 0` es siempre falso). La
+guarda de `isOrderValid` llega, por tanto, antes de cualquier borrado, también en pago
+rápido (`validateOrderFast`) y en validación forzada.
 
-- QA2-01 (cliente): `overrides/pos_store.js` parchea `beforeDeleteOrder` y `_onBeforeDeleteOrder` (`orderDeletionBlockers`): ningún pedido con líneas Redsys authorized/unknown/refund, en curso o force_done se borra desde "Cancelar pedido", tickets o "Cancel Orders" del cierre. Alternativa para el cajero: diálogo "Guardar el pedido para conciliación" (sincroniza el pedido en borrador con `syncAllOrders({orders, force})`), solo si todas las líneas ya tienen estado Redsys y nada está en curso; si el datáfono trabaja solo se explica. Para finalizar un pedido con cobro autorizado el cajero lo valida y devuelve después por la vía normal de devoluciones. Servidor: `pos.order.action_pos_order_cancel` rechaza (UserError) pedidos borrador con líneas authorized/unknown/refund (cubre el `open_order_ids` del cierre aunque el pedido no esté cargado en el navegador). `not_charged` no impide cancelar. Bypass: `su` + contexto `redsys_force_unlink` (solo servidor).
-- QA2-02: `overrides/order_payment_validation.js` parchea `OrderPaymentValidation.isOrderValid`: rechaza con aviso mientras haya líneas `pendingRedsysLines` (Redsys no `done` con estado authorized/unknown/refund, en curso o force_done). Una línea `done` (incluida la confirmada a mano con `unknown`, destinada a conciliación) y una denegada limpia (`retry` sin estado) no bloquean.
-- QA2-03: `pos.session._cannot_close_session` (cierre desde el POS) y `action_pos_session_closing_control` (backend) rechazan el cierre con líneas `unknown` en la sesión; el mensaje lista referencia, importe y pedido y remite al menú de conciliación (`redirect: True` lleva al backend). Se decide BLOQUEAR (no solo avisar): hasta que un manager concilie, el cierre contable incluiría como cobro con tarjeta un cargo no confirmado.
-- QA2-04 (flujo): una línea `unknown` ya sincronizada se libera con el RPC `pos.payment.redsys_release_unknown` (grupo `group_pos_user`; llamado por `releaseLine` del servicio cuando la línea tiene id de servidor). Solo si el pedido sigue en borrador y la línea NO tiene pedido/RTS/XML (las dudosas con XML las concilia un manager). Pasa a `not_charged` con usuario, fecha y nota y deja mensaje en el chatter del pedido; el POS refleja `redsys_state='not_charged'` (coherente con el servidor: evita el rechazo `unknown -> False`) y elimina la línea; el cajero añade un pago nuevo (una línea `not_charged` no se reutiliza para otro cobro). Si el RPC falla, la línea sigue bloqueada. Una línea solo local (sin id) se libera como antes. D10 no se debilita: sin liberar, `[2, id]` sigue rechazado. Probado con `sync_from_ui` real (`test_qa2_04_*`). Riesgo residual (admitido, igual que QA-18): un cajero que libera una línea que sí se cobró; ahora con rastro auditable.
-- QA2-05 (PARCIAL): una línea `not_charged` se puede borrar mientras su pedido esté en borrador (rastro en el chatter). En un pedido ya pagado se queda (borrarla alteraría `amount_paid` y la contabilidad ya generada) y el wizard de conciliación muestra un aviso con los pedidos afectados; la corrección contable del pedido es manual. No se ha implementado un asistente de anulación con ajuste del pedido.
-- QA2-06: validación servidor de `refund`: importe negativo (y `authorized` positivo); con `redsys_original_pedido`, exige un cobro `authorized` del mismo método con ese pedido, rechaza repetir una devolución (misma referencia, o mismos pedido+RTS si falta alguna referencia) y que la suma de devoluciones supere lo cobrado. Dos devoluciones parciales legítimas (referencias distintas, mismo pedido/RTS) pasan. Sin `redsys_original_pedido` se mantiene el criterio anterior (no puede compartir ids con otra línea).
-- QA2-09: reenviar `redsys_state=unknown` sobre una línea ya `authorized/refund/not_charged` es un no-op para los campos Redsys y `payment_status` (los demás campos de UI sí se guardan); el pedido sincroniza y el servidor conserva el estado conciliado.
-- QA2-10: `pos.order` hereda `@api.ondelete(at_uninstall=False)` que impide borrar pedidos con líneas en estado protegido (antes de la cascada). Límite documentado: la cascada SQL (`ondelete='cascade'` de `pos.payment.pos_order_id`), un DELETE por SQL, borrar la sesión/BD o desinstalar el módulo no pasan por el ORM y la saltan.
-- QA2-11: `RedsysService.init()` y `checkStatus()` toman el mismo Web Lock (`ifAvailable`); si otra pestaña lo tiene, `init` devuelve BUSY sin tocar la DLL (el estado no pasa a FAILED) y `checkStatus` devuelve el último estado con `busy`. Los init internos de pay/refund ya van dentro del cerrojo. El indicador muestra "ocupado" (no error) en ese caso.
-- QA2-12: tras un timeout local de pay/refund el cerrojo NO se libera en el `finally`: lo retiene el "huérfano" hasta el retorno tardío de la DLL o `orphanMs` (5 min) y entonces se libera solo. Otra pestaña recibe BUSY. Sin verificar con DLL real (S8c/S8f). Cierre de la pestaña: el navegador libera el cerrojo (ventana abierta para un 2º cobro desde otra pestaña mientras la DLL sigue viva, no cubierta).
-- QA2-13: BUSY por cerrojo ajeno (en `query` o en `init`) => `recoverLine` devuelve `skipped`, no marca `unknown`.
-- QA2-14: `recoverOrder` solo restaura `paymentTerminalInProgress` si sigue en `true` (si el core lo apagó entre medias, no se resucita).
-- QA2-15: `makeStartMarks.purge` borra marcas `redsys_start:*` de más de 7 días y las corruptas; se ejecuta al crear el servicio.
-- QA2-16: una marca solo es válida si es un entero de 13 dígitos; `""`, `"0"` y similares = ausente (gracia completa).
-- QA2-17: índices únicos parciales en BD (`pos_payment_redsys_transaction_id_authorized_uniq` y `..._redsys_rts_authorized_uniq`: método + pedido / método + RTS, solo `authorized` con valor), creados en `init()`; si hay duplicados previos no se crean (se omite en silencio, sin logging por política del módulo) y queda la comprobación Python. Un `IntegrityError` de esos índices se traduce al mismo `ValidationError`. Las devoluciones comparten ids con el cobro y quedan fuera del índice (las cubre QA2-06).
-- No verificado en navegador ni con hardware: los parches de `PosStore` y `OrderPaymentValidation` se prueban sobre réplicas mínimas del core (`tests_js/qa/harness/stubs.mjs`) y leyendo el core; falta un tour real (cancelar pedido, validar con efectivo y cierre con "Cancel Orders").
-- Tests: JS 231 (223 pass, 0 fail, 8 todo antiguos de la ronda 1: QA-03/05/06/07/08/09/12); Python 50, 0 failed. Los `todo` de qa2.test.js y los `test_qa2_known_issue_*` se convirtieron a aserciones del comportamiento correcto. El log de Odoo muestra un `ERROR: duplicate key ... _uniq` esperado en `test_qa_20_server_validates...` (el índice rechazando el duplicado antes de la comprobación Python).
+- QA2-01 (cliente): `overrides/pos_store.js` parchea `beforeDeleteOrder` y
+  `_onBeforeDeleteOrder` (`orderDeletionBlockers`): ningún pedido con líneas Redsys
+  authorized/unknown/refund, en curso o force_done se borra desde "Cancelar pedido",
+  tickets o "Cancel Orders" del cierre. Alternativa para el cajero: diálogo "Guardar el
+  pedido para conciliación" (sincroniza el pedido en borrador con
+  `syncAllOrders({orders, force})`), solo si todas las líneas ya tienen estado Redsys y
+  nada está en curso; si el datáfono trabaja solo se explica. Para finalizar un pedido
+  con cobro autorizado el cajero lo valida y devuelve después por la vía normal de
+  devoluciones. Servidor: `pos.order.action_pos_order_cancel` rechaza (UserError)
+  pedidos borrador con líneas authorized/unknown/refund (cubre el `open_order_ids` del
+  cierre aunque el pedido no esté cargado en el navegador). `not_charged` no impide
+  cancelar. Bypass: `su` + contexto `redsys_force_unlink` (solo servidor).
+- QA2-02: `overrides/order_payment_validation.js` parchea
+  `OrderPaymentValidation.isOrderValid`: rechaza con aviso mientras haya líneas
+  `pendingRedsysLines` (Redsys no `done` con estado authorized/unknown/refund, en curso
+  o force_done). Una línea `done` (incluida la confirmada a mano con `unknown`,
+  destinada a conciliación) y una denegada limpia (`retry` sin estado) no bloquean.
+- QA2-03: `pos.session._cannot_close_session` (cierre desde el POS) y
+  `action_pos_session_closing_control` (backend) rechazan el cierre con líneas `unknown`
+  en la sesión; el mensaje lista referencia, importe y pedido y remite al menú de
+  conciliación (`redirect: True` lleva al backend). Se decide BLOQUEAR (no solo avisar):
+  hasta que un manager concilie, el cierre contable incluiría como cobro con tarjeta un
+  cargo no confirmado.
+- QA2-04 (flujo): una línea `unknown` ya sincronizada se libera con el RPC
+  `pos.payment.redsys_release_unknown` (grupo `group_pos_user`; llamado por
+  `releaseLine` del servicio cuando la línea tiene id de servidor). Solo si el pedido
+  sigue en borrador y la línea NO tiene pedido/RTS/XML (las dudosas con XML las concilia
+  un manager). Pasa a `not_charged` con usuario, fecha y nota y deja mensaje en el
+  chatter del pedido; el POS refleja `redsys_state='not_charged'` (coherente con el
+  servidor: evita el rechazo `unknown -> False`) y elimina la línea; el cajero añade un
+  pago nuevo (una línea `not_charged` no se reutiliza para otro cobro). Si el RPC falla,
+  la línea sigue bloqueada. Una línea solo local (sin id) se libera como antes. D10 no
+  se debilita: sin liberar, `[2, id]` sigue rechazado. Probado con `sync_from_ui` real
+  (`test_qa2_04_*`). Riesgo residual (admitido, igual que QA-18): un cajero que libera
+  una línea que sí se cobró; ahora con rastro auditable.
+- QA2-05 (PARCIAL): una línea `not_charged` se puede borrar mientras su pedido esté en
+  borrador (rastro en el chatter). En un pedido ya pagado se queda (borrarla alteraría
+  `amount_paid` y la contabilidad ya generada) y el wizard de conciliación muestra un
+  aviso con los pedidos afectados; la corrección contable del pedido es manual. No se ha
+  implementado un asistente de anulación con ajuste del pedido.
+- QA2-06: validación servidor de `refund`: importe negativo (y `authorized` positivo);
+  con `redsys_original_pedido`, exige un cobro `authorized` del mismo método con ese
+  pedido, rechaza repetir una devolución (misma referencia, o mismos pedido+RTS si falta
+  alguna referencia) y que la suma de devoluciones supere lo cobrado. Dos devoluciones
+  parciales legítimas (referencias distintas, mismo pedido/RTS) pasan. Sin
+  `redsys_original_pedido` se mantiene el criterio anterior (no puede compartir ids con
+  otra línea).
+- QA2-09: reenviar `redsys_state=unknown` sobre una línea ya
+  `authorized/refund/not_charged` es un no-op para los campos Redsys y `payment_status`
+  (los demás campos de UI sí se guardan); el pedido sincroniza y el servidor conserva el
+  estado conciliado.
+- QA2-10: `pos.order` hereda `@api.ondelete(at_uninstall=False)` que impide borrar
+  pedidos con líneas en estado protegido (antes de la cascada). Límite documentado: la
+  cascada SQL (`ondelete='cascade'` de `pos.payment.pos_order_id`), un DELETE por SQL,
+  borrar la sesión/BD o desinstalar el módulo no pasan por el ORM y la saltan.
+- QA2-11: `RedsysService.init()` y `checkStatus()` toman el mismo Web Lock
+  (`ifAvailable`); si otra pestaña lo tiene, `init` devuelve BUSY sin tocar la DLL (el
+  estado no pasa a FAILED) y `checkStatus` devuelve el último estado con `busy`. Los
+  init internos de pay/refund ya van dentro del cerrojo. El indicador muestra "ocupado"
+  (no error) en ese caso.
+- QA2-12: tras un timeout local de pay/refund el cerrojo NO se libera en el `finally`:
+  lo retiene el "huérfano" hasta el retorno tardío de la DLL o `orphanMs` (5 min) y
+  entonces se libera solo. Otra pestaña recibe BUSY. Sin verificar con DLL real
+  (S8c/S8f). Cierre de la pestaña: el navegador libera el cerrojo (ventana abierta para
+  un 2º cobro desde otra pestaña mientras la DLL sigue viva, no cubierta).
+- QA2-13: BUSY por cerrojo ajeno (en `query` o en `init`) => `recoverLine` devuelve
+  `skipped`, no marca `unknown`.
+- QA2-14: `recoverOrder` solo restaura `paymentTerminalInProgress` si sigue en `true`
+  (si el core lo apagó entre medias, no se resucita).
+- QA2-15: `makeStartMarks.purge` borra marcas `redsys_start:*` de más de 7 días y las
+  corruptas; se ejecuta al crear el servicio.
+- QA2-16: una marca solo es válida si es un entero de 13 dígitos; `""`, `"0"` y
+  similares = ausente (gracia completa).
+- QA2-17: índices únicos parciales en BD
+  (`pos_payment_redsys_transaction_id_authorized_uniq` y
+  `..._redsys_rts_authorized_uniq`: método + pedido / método + RTS, solo `authorized`
+  con valor), creados en `init()`; si hay duplicados previos no se crean (se omite en
+  silencio, sin logging por política del módulo) y queda la comprobación Python. Un
+  `IntegrityError` de esos índices se traduce al mismo `ValidationError`. Las
+  devoluciones comparten ids con el cobro y quedan fuera del índice (las cubre QA2-06).
+- No verificado en navegador ni con hardware: los parches de `PosStore` y
+  `OrderPaymentValidation` se prueban sobre réplicas mínimas del core
+  (`tests_js/qa/harness/stubs.mjs`) y leyendo el core; falta un tour real (cancelar
+  pedido, validar con efectivo y cierre con "Cancel Orders").
+- Tests: JS 231 (223 pass, 0 fail, 8 todo antiguos de la ronda 1:
+  QA-03/05/06/07/08/09/12); Python 50, 0 failed. Los `todo` de qa2.test.js y los
+  `test_qa2_known_issue_*` se convirtieron a aserciones del comportamiento correcto. El
+  log de Odoo muestra un `ERROR: duplicate key ... _uniq` esperado en
+  `test_qa_20_server_validates...` (el índice rechazando el duplicado antes de la
+  comprobación Python).
+
+## Correcciones QA ronda 4 (informe docs/qa_report3.md)
+
+- R3-01: `pos.payment.create/write` rechazan (`_redsys_check_terminal_flow`) una línea
+  de un método `redsys_tpvpc` (sin `redsys_simulation`) que no tenga `redsys_state` y
+  esté dada por buena (`payment_status` vacío o `done`): el popup/wizard de pago de
+  `pos_conventional_payment_wizard` ya no puede registrar una tarjeta sin cobro. Siguen
+  sincronizándose las líneas en curso o denegadas del POS (`pending/waiting*/retry`). Se
+  decide RECHAZAR (no "flujo manual"): el cobro manual de una tarjeta ya se cubre con el
+  estado `unknown` + conciliación del manager. `unknown -> sin estado` (QA-18) ahora
+  exige enviar también `payment_status` `retry` (lo que ya envía el POS al liberar).
+  Complemento fuera de este repo (no tocado): excluir métodos con terminal del
+  popup/wizard convencional.
+- R3-02: la guarda de cancelación vive en `pos.order.write` (`state == 'cancel'`), no
+  solo en `action_pos_order_cancel`; cubre `remove_from_ui`,
+  `_cancel_empty_draft_orders` y el wizard de cierre de
+  `pos_conventional_session_management` sin tocar ese repo. Bypass: `su` + contexto
+  `redsys_force_unlink` (solo servidor). Efecto: el cierre convencional que cancele un
+  borrador "vacío" con cobro `authorized` fallará con aviso; la salida es R3-04.
+- R3-04: wizard `pos.order.redsys.cancel` (botón "Cancel (Redsys refund registered)" en
+  el pedido borrador, solo `group_pos_manager`) ->
+  `pos.order.redsys_manager_cancel(refund_reference, note)`: referencia de la devolución
+  hecha en el portal/datáfono y nota obligatorias, rechaza líneas `unknown` (conciliar
+  antes), cancela con el bypass, conserva las líneas Redsys y deja el mensaje en el
+  chatter. No crea una línea `refund` (la devolución se hace fuera).
+- R3-06: `not_charged` se trata como resuelta antes de mirar `payment_status` en
+  `canDeleteRedsysLine`, `pendingRedsysLines`, `orderDeletionBlockers` y
+  `unresolvedLines`; `releaseLine` además añade el pedido a pendientes y lo sincroniza
+  (mejor esfuerzo) para que el borrado llegue al servidor antes de una recarga.
+- R3-03: `pos.session._validate_session` rechaza con el mismo aviso que el cierre normal
+  si hay líneas `unknown` (cubre `action_pos_session_validate/close` por RPC).
+- R3-05: `redsys_reconcile` escribe dentro de un savepoint y traduce el `IntegrityError`
+  de los índices únicos a `ValidationError`.
+- R3-07: "Guardar el pedido para conciliación" pasa `throw: true` a `syncAllOrders`.
+- R3-11 (PARCIAL): `PosStore.removeOrder` parcheado: un pedido no finalizado con cobros
+  Redsys no se elimina ni registra borrado pendiente (cubre `pos_restaurant` y
+  `isShareable`). NO cubierto: `data.localDeleteCascade` directo (widget debug
+  `?debug`).
+- R3-10 (NO corregido): el `_logger.warning` contradice la política "sin logging" del
+  módulo (`test_qa_no_logging_or_print_in_python`); el índice omitido por duplicados
+  sigue sin aviso propio (Odoo ya escribe `bad query`).
+- R3-08: `pos_payment.py` usa `odoo.tools.SQL` (E8103), `unlink` justifica
+  `no-raise-unlink` (E8140) y `init`/`_onchange_use_payment_terminal` devuelven el
+  `super` (W8110); `_redsys_validate_authorization` partida en `_redsys_xml_errors`
+  (C901); wizards movidos a `wizard/` (C8113) y `string` redundante quitado (W8113).
+  `.ruff.toml` del módulo (copia de la raíz con `line-length = 120`, el estilo real del
+  módulo) y `.eslintrc.yml` del módulo (módulos ES, `globalThis`, reglas de estilo de
+  dobles de test desactivadas). Tests: B017/B018/FURB173/FURB184/E501 corregidos.
+  `pre-commit run --files <módulo>`: todos los hooks pasan; solo queda el aviso opcional
+  C8101 (autor del manifest `Luis Botello`, no `Xtendoo`; no bloquea). Los hooks
+  `ruff-format`/`prettier`/`eslint --fix` reformatearon ficheros del propio módulo.
+- Tests: JS 236 (228 pass, 0 fail, 8 todo antiguos de la ronda 1); Python 60 (0 failed,
+  0 error). Los `test_qa3_known_issue_*` y los `todo` R3-06/R3-07 se convirtieron en
+  `test_qa3_05..09` y tests normales.

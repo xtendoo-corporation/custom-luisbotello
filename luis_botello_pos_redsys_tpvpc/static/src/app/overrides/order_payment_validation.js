@@ -5,20 +5,23 @@
 // sin registro. `isOrderValid` se ejecuta antes de esa limpieza (order_payment_validation.js, validateOrder),
 // y también lo usan el pago rápido (validateOrderFast) y la validación forzada.
 import OrderPaymentValidation from "@point_of_sale/app/utils/order_payment_validation";
-import { AlertDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
-import { patch } from "@web/core/utils/patch";
-import { pendingRedsysLines, validationBlockedMessage } from "../utils/redsys_pos_logic.js";
+import {AlertDialog} from "@web/core/confirmation_dialog/confirmation_dialog";
+import {patch} from "@web/core/utils/patch";
+import {
+  pendingRedsysLines,
+  validationBlockedMessage,
+} from "../utils/redsys_pos_logic.js";
 
 patch(OrderPaymentValidation.prototype, {
-    async isOrderValid(isForceValidate) {
-        const pending = pendingRedsysLines(this.paymentLines);
-        if (pending.length) {
-            this.pos.dialog.add(AlertDialog, {
-                title: "Redsys: cobros sin resolver",
-                body: validationBlockedMessage(pending),
-            });
-            return false;
-        }
-        return super.isOrderValid(...arguments);
-    },
+  async isOrderValid(isForceValidate) {
+    const pending = pendingRedsysLines(this.paymentLines);
+    if (pending.length) {
+      this.pos.dialog.add(AlertDialog, {
+        title: "Redsys: cobros sin resolver",
+        body: validationBlockedMessage(pending),
+      });
+      return false;
+    }
+    return super.isOrderValid(...arguments);
+  },
 });

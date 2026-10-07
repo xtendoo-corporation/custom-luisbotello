@@ -2,5 +2,7 @@
   "name": "luis_botello_pos_redsys_tpvpc",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests_js/" }
+  "scripts": {
+    "test": "node --test tests_js/"
+  }
 }

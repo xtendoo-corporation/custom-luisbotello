@@ -1,16 +1,16 @@
 # Guía para quien coordina la sesión de pruebas con el cliente
 
-Para la persona de Xtendoo que dirige la sesión remota (máx. 90 min) con el comercio.
-El guion paso a paso para el cliente está en `diagnostic_kit/README_SESION.md` (raíz del
+Para la persona de Xtendoo que dirige la sesión remota (máx. 90 min) con el comercio. El
+guion paso a paso para el cliente está en `diagnostic_kit/README_SESION.md` (raíz del
 repositorio); aquí está lo que hay que preparar, pedir y anotar.
 
 ## Material del kit
 
-| Fichero (en `diagnostic_kit/`) | Para qué |
-|---|---|
-| `README_SESION.md` | Guion para el cliente (preparar PC, abrir la página, init/check/cobro 0,01 EUR/consulta/devolución) y tabla de anotaciones S1-S5 |
-| `index.html` | Página de diagnóstico que ejecuta los chequeos y descarga el informe `.json` |
-| `index_https_odoo.md` | Cómo servir el kit desde un origen HTTPS (Odoo, opción A recomendada) para que S1 sea representativo |
+| Fichero (en `diagnostic_kit/`) | Para qué                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `README_SESION.md`             | Guion para el cliente (preparar PC, abrir la página, init/check/cobro 0,01 EUR/consulta/devolución) y tabla de anotaciones S1-S5 |
+| `index.html`                   | Página de diagnóstico que ejecuta los chequeos y descarga el informe `.json`                                                     |
+| `index_https_odoo.md`          | Cómo servir el kit desde un origen HTTPS (Odoo, opción A recomendada) para que S1 sea representativo                             |
 
 `file://` y `http://localhost` no son representativos para S1. Ensayo sin datáfono:
 añadir `?mock=1` a la dirección (no valida nada real).
@@ -20,19 +20,20 @@ añadir `?mock=1` a la dirección (no valida nada real).
 Pedir **pronto** (no debe ser el cuello de botella). Lista del plan §9:
 
 1. Del portal `canales.redsys.es`: **`tpvpc-impl.js`**, el **MSI del servicio** (versión
-   de pruebas INTE y, más adelante, la de explotación) y los drivers **`DRIVERSVERIFONE`**.
+   de pruebas INTE y, más adelante, la de explotación) y los drivers
+   **`DRIVERSVERIFONE`**.
 2. **Credenciales de pruebas** (comercio, terminal, clave de firma) a través del banco
-   del cliente. No pegarlas en el repo ni en el chat: van a un fichero local ignorado por git
-   (`*credentials*`, `diagnostic_kit/*.local.*`).
+   del cliente. No pegarlas en el repo ni en el chat: van a un fichero local ignorado
+   por git (`*credentials*`, `diagnostic_kit/*.local.*`).
 3. **Confirmación escrita de Redsys/banco** de que el P400 está habilitado para TPV-PC
-   Implantado con el servicio JS (S2) y qué `cConfPuerto`/`cVersion` usar (S3). El manual
-   solo nombra Vx820 e iPP320.
+   Implantado con el servicio JS (S2) y qué `cConfPuerto`/`cVersion` usar (S3). El
+   manual solo nombra Vx820 e iPP320.
 4. Una **sesión remota de ~90 min** con el cliente (PC Windows con el P400).
 5. Una **instancia Odoo de pruebas con HTTPS** accesible desde el PC del cliente.
 
 Además, para el cierre: preguntar al banco qué debe imprimir la boleta y si exige
-certificación o pruebas de aceptación firmadas (S7), y cómo se consulta un cobro
-dudoso en `canales.redsys.es` (las operaciones se conservan 4 meses).
+certificación o pruebas de aceptación firmadas (S7), y cómo se consulta un cobro dudoso
+en `canales.redsys.es` (las operaciones se conservan 4 meses).
 
 Del cliente: PC Windows 10/11 de la caja con Internet, el P400 y su cable USB, una
 tarjeta real (se cobra 0,01 EUR y se devuelve) y 90 minutos sin usar la caja.
@@ -65,5 +66,7 @@ arquitectura por cuenta propia.
    tarjetas de prueba del banco), devolución total y parcial, consulta, doble clic.
 4. Pruebas de fallo reales: desconectar el USB a mitad, cortar Internet, recargar el
    navegador a mitad, reiniciar el servicio Windows, apagar el datáfono.
-5. Pasar a entorno real solo con aprobación explícita: primer cobro de 1 EUR y su devolución.
-6. Borrar de `static/` del servidor Odoo la copia del kit y de `tpvpc-impl.js` si no es del módulo.
+5. Pasar a entorno real solo con aprobación explícita: primer cobro de 1 EUR y su
+   devolución.
+6. Borrar de `static/` del servidor Odoo la copia del kit y de `tpvpc-impl.js` si no es
+   del módulo.

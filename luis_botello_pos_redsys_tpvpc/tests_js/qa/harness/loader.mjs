@@ -4,8 +4,8 @@
 const STUBS = new URL("./stubs.mjs", import.meta.url).href;
 
 export async function resolve(specifier, context, nextResolve) {
-    if (/^@(odoo|web|point_of_sale)\//.test(specifier)) {
-        return { url: STUBS, shortCircuit: true };
-    }
-    return nextResolve(specifier, context);
+  if (/^@(odoo|web|point_of_sale)\//.test(specifier)) {
+    return {url: STUBS, shortCircuit: true};
+  }
+  return nextResolve(specifier, context);
 }

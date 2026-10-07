@@ -1,0 +1,15 @@
+# Los ficheros JS del módulo son módulos ES (el .eslintrc de la raíz solo trata *.esm.js como módulo) y
+# parte del código son stubs/dobles de test; se relajan reglas de estilo que no aportan seguridad (R3-08).
+parserOptions:
+  sourceType: module
+env:
+  node: true
+globals:
+  globalThis: readonly
+rules:
+  no-empty-function: "off"
+  init-declarations: "off"
+  no-use-before-define: "off"
+  no-unused-vars: ["error", {args: "none"}]
+  no-eq-null: "off"
+  no-unused-expressions: "off"
