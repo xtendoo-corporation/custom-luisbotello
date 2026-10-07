@@ -10,7 +10,6 @@ import { makeReference } from "../redsys/redsys_service.js";
 import {
     canRefundRedsysLine,
     interpretPayResult,
-    isRedsysMethod,
     refundInfoFromOriginal,
     unresolvedLines,
     validateRefund,
@@ -184,4 +183,3 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
 }
 
 register_payment_method("redsys_tpvpc", PaymentRedsysTpvpc);
-export { isRedsysMethod };
