@@ -39,6 +39,18 @@
         </field>
     </record>
 
+    <!-- Oculta la descripción por defecto para que Intro tras elegir el producto pase a la cantidad -->
+    <record id="view_move_form_inherit_hide_line_name" model="ir.ui.view">
+        <field name="name">account.move.form.inherit.hide.line.name</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='name']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+        </field>
+    </record>
+
     <record id="view_account_invoice_tree_groups" model="ir.ui.view">
         <field name="name">account.move.margin.view.tree.inherit</field>
         <field name="model">account.move</field>
