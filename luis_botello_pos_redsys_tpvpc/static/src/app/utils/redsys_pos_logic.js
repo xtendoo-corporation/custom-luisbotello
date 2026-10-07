@@ -36,8 +36,9 @@ function cardVals(result) {
 }
 
 /** Valores a escribir en la línea cuando Redsys ha autorizado (cobro o devolución). */
-export function authorizedVals(result, { isRefund = false } = {}) {
+export function authorizedVals(result, { isRefund = false, originalPedido = null } = {}) {
     return {
+        ...(isRefund && originalPedido ? { redsys_original_pedido: String(originalPedido) } : {}),
         transaction_id: result.pedido || "",
         payment_ref_no: result.reference || "",
         redsys_reference: result.reference || "",
@@ -70,13 +71,13 @@ export function receiptText(result, { isRefund = false } = {}) {
  * Traduce un PayResult de RedsysService a la decisión del POS.
  * outcome: 'done' (return true) | 'retry' (return false) | 'unknown' (false + force_done manual)
  */
-export function interpretPayResult(result, { isRefund = false } = {}) {
+export function interpretPayResult(result, { isRefund = false, originalPedido = null } = {}) {
     const r = result || {};
     const reference = r.reference || null;
     if (r.status === "authorized" && !r.warning) {
         return {
             outcome: "done",
-            vals: authorizedVals(r, { isRefund }),
+            vals: authorizedVals(r, { isRefund, originalPedido }),
             receipt: receiptText(r, { isRefund }),
             message: r.userMessage || null,
             notify: r.recovered ? r.userMessage : null,
@@ -86,7 +87,7 @@ export function interpretPayResult(result, { isRefund = false } = {}) {
         // Importe distinto o varias autorizadas: no se da por buena sin revisión humana.
         return {
             outcome: "unknown",
-            vals: { ...authorizedVals(r, { isRefund }), redsys_state: "unknown" },
+            vals: { ...authorizedVals(r, { isRefund, originalPedido }), redsys_state: "unknown" },
             receipt: null,
             message:
                 r.warning === "AMOUNT_MISMATCH"
@@ -97,7 +98,12 @@ export function interpretPayResult(result, { isRefund = false } = {}) {
     if (r.status === "unknown") {
         return {
             outcome: "unknown",
-            vals: { redsys_state: "unknown", redsys_reference: reference, payment_ref_no: reference },
+            vals: {
+                redsys_state: "unknown",
+                redsys_reference: reference,
+                payment_ref_no: reference,
+                ...(isRefund && originalPedido ? { redsys_original_pedido: String(originalPedido) } : {}),
+            },
             receipt: null,
             message:
                 "No se ha podido confirmar el resultado del cobro. NO repita el cobro: " +
@@ -206,6 +212,33 @@ export function refundableAmount(orig, knownRefunds = []) {
     return Math.max(0, origCents - used) / 100;
 }
 
+/**
+ * Devoluciones previas contra un cobro original: líneas `refund` (o `unknown`
+ * con importe negativo, que pudieron cobrarse) cuyo `redsys_original_pedido`
+ * coincide con el pedido del original y, si ambos lo indican, mismo método.
+ * `payments` = todas las pos.payment cargadas (pedidos del POS).
+ */
+export function previousRefunds(orig, payments = []) {
+    const pedido = orig && orig.transaction_id;
+    if (!pedido) {
+        return [];
+    }
+    const methodId = orig.payment_method_id && orig.payment_method_id.id;
+    return payments.filter((p) => {
+        if (!p || p === orig || p.redsys_original_pedido !== String(pedido)) {
+            return false;
+        }
+        if (p.redsys_state !== "refund" && p.redsys_state !== "unknown") {
+            return false;
+        }
+        if (!(Number(p.amount) < 0)) {
+            return false;
+        }
+        const pm = p.payment_method_id && p.payment_method_id.id;
+        return !(methodId && pm && methodId !== pm);
+    });
+}
+
 /** Datos de devolución guardados en la línea de reembolso (uiState). */
 export function refundInfoFromOriginal(orig) {
     return {
@@ -217,7 +250,7 @@ export function refundInfoFromOriginal(orig) {
 }
 
 /** Valida una devolución concreta frente a la información del original. */
-export function validateRefund(info, amount) {
+export function validateRefund(info, amount, alreadyRefunded = 0) {
     if (!info || !info.pedido || !info.rts) {
         return { ok: false, reason: "Esta devolución no está enlazada a un cobro Redsys con pedido y RTS." };
     }
@@ -226,6 +259,12 @@ export function validateRefund(info, amount) {
     }
     if (money(Math.abs(amount)) > money(info.amount)) {
         return { ok: false, reason: "No se puede devolver más de lo cobrado en la operación original." };
+    }
+    if (money(Math.abs(amount)) + Math.abs(money(alreadyRefunded)) > money(info.amount)) {
+        return {
+            ok: false,
+            reason: "Con las devoluciones ya realizadas sobre este cobro no queda importe suficiente para devolver.",
+        };
     }
     return { ok: true };
 }

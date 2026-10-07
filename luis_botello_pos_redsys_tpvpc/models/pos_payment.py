@@ -12,6 +12,7 @@ REDSYS_LOCKED_FIELDS = {
     "redsys_rts",
     "redsys_xml",
     "redsys_reference",
+    "redsys_original_pedido",
 }
 
 
@@ -27,6 +28,13 @@ class PosPayment(models.Model):
         index="btree_not_null",
     )
     redsys_reference = fields.Char(string="Redsys reference", copy=False, index=True)
+    redsys_original_pedido = fields.Char(
+        string="Redsys original order",
+        copy=False,
+        index="btree_not_null",
+        help="Redsys order number (pedido) of the original charge this refund "
+        "belongs to. Lets the POS add up previous refunds against one charge.",
+    )
 
     def unlink(self):
         if not self.env.context.get("redsys_force_unlink"):

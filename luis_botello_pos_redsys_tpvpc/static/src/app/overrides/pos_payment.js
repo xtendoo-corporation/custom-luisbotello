@@ -18,6 +18,7 @@ patch(PosPayment.prototype, {
         super.updateRefundPaymentLine(refundedPaymentLine);
         if (isRedsysMethod(this.payment_method_id) && canRefundRedsysLine(refundedPaymentLine).ok) {
             this.uiState.redsysRefund = refundInfoFromOriginal(refundedPaymentLine);
+            this.redsys_original_pedido = refundedPaymentLine.transaction_id || false;
         } else if (isRedsysMethod(this.payment_method_id)) {
             this.uiState.redsysRefund = null;
         }

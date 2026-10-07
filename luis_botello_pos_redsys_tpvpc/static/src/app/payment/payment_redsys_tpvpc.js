@@ -10,6 +10,7 @@ import { makeReference } from "../redsys/redsys_service.js";
 import {
     canRefundRedsysLine,
     interpretPayResult,
+    previousRefunds,
     refundInfoFromOriginal,
     unresolvedLines,
     validateRefund,
@@ -54,6 +55,16 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         return orig ? refundInfoFromOriginal(orig) : null;
     }
 
+    /** Suma ya devuelta contra el mismo pedido original (excluye la propia línea). */
+    _alreadyRefunded(info, line) {
+        if (!info || !info.pedido) {
+            return 0;
+        }
+        const orig = { transaction_id: info.pedido, payment_method_id: line.payment_method_id };
+        const prev = previousRefunds(orig, this.pos.models["pos.payment"].getAll()).filter((p) => p !== line);
+        return prev.reduce((s, p) => s + Math.abs(p.amount || 0), 0);
+    }
+
     async sendPaymentRequest(uuid) {
         await super.sendPaymentRequest(uuid);
         const line = this._getLine(uuid);
@@ -96,7 +107,11 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         let info = null;
         if (isRefund) {
             info = this.refundInfoFor(line);
-            const check = validateRefund(info, amount);
+            const check = validateRefund(
+                info,
+                amount,
+                this._alreadyRefunded(info, line)
+            );
             if (!check.ok) {
                 this._alert("Redsys: devolución no disponible", check.reason);
                 return false;
@@ -115,6 +130,9 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         // La referencia se persiste ANTES de cobrar: permite consultar tras una recarga.
         line.payment_ref_no = reference;
         line.redsys_reference = reference;
+        if (isRefund && info.pedido) {
+            line.redsys_original_pedido = info.pedido;
+        }
         const redsys = ready.entry.redsys;
         this._liveStatus = "waiting";
         const off = [
@@ -136,7 +154,7 @@ export class PaymentRedsysTpvpc extends PaymentInterface {
         } finally {
             off.forEach((fn) => fn());
         }
-        const decision = interpretPayResult(result, { isRefund });
+        const decision = interpretPayResult(result, { isRefund, originalPedido: info && info.pedido });
         Object.assign(line, decision.vals);
         if (decision.outcome === "done") {
             line.setReceiptInfo(decision.receipt);

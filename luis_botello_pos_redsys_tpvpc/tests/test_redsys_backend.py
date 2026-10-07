@@ -137,6 +137,26 @@ class TestRedsysBackend(TestPoSCommon):
         # pos.payment usa el mixin por defecto ([]): se cargan todos los campos
         self.assertEqual(self.env["pos.payment"]._load_pos_data_fields(self.config), [])
 
+    def test_original_pedido_field(self):
+        payment = self._make_payment("refund")
+        self.assertFalse(payment.redsys_original_pedido)
+        order = payment.pos_order_id
+        refund = self.env["pos.payment"].create(
+            {
+                "pos_order_id": order.id,
+                "payment_method_id": self.method.id,
+                "amount": -4,
+                "transaction_id": "123456789013",
+                "redsys_state": "refund",
+                "redsys_original_pedido": "123456789012",
+            }
+        )
+        self.assertEqual(refund.redsys_original_pedido, "123456789012")
+        # se carga al POS (mixin sin campos = todos) y no se copia
+        self.assertFalse(refund.copy_data()[0].get("redsys_original_pedido"))
+        with self.assertRaises(UserError):
+            refund.write({"redsys_original_pedido": "999"})
+
     def test_unlink_authorized_blocked(self):
         payment = self._make_payment()
         with self.assertRaises(UserError):

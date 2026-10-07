@@ -7,6 +7,7 @@ import {
     interpretPayResult,
     interpretQuery,
     needsRecovery,
+    previousRefunds,
     receiptText,
     recoveryWindow,
     refundableAmount,
@@ -191,4 +192,49 @@ test("indicador", () => {
 test("authorizedVals nunca incluye PAN completo", () => {
     const v = authorizedVals({ ...AUTH, maskedPan: "************0018" });
     assert.ok(!JSON.stringify(v).includes("************"));
+});
+
+test("devoluciones previas: acumula por redsys_original_pedido y respeta el limite", () => {
+    const m = { id: 7, use_payment_terminal: "redsys_tpvpc" };
+    const o = { ...orig, transaction_id: "10549", payment_method_id: m, amount: 20 };
+    const r = (amount, extra = {}) => ({
+        amount,
+        payment_method_id: m,
+        redsys_state: "refund",
+        redsys_original_pedido: "10549",
+        ...extra,
+    });
+    const payments = [
+        o,
+        r(-5),
+        r(-7.5, { redsys_state: "unknown" }),
+        r(-3, { redsys_original_pedido: "99999" }), // otro cobro
+        r(-2, { redsys_state: false }), // no confirmada
+        r(-4, { payment_method_id: { id: 8, use_payment_terminal: "redsys_tpvpc" } }), // otro metodo
+        r(6), // positiva: no es devolucion
+    ];
+    const prev = previousRefunds(o, payments);
+    assert.equal(prev.length, 2);
+    assert.equal(refundableAmount(o, prev), 7.5);
+    assert.deepEqual(previousRefunds({ ...o, transaction_id: "" }, payments), []);
+    assert.equal(refundableAmount(o, previousRefunds(o, [r(-20)])), 0);
+});
+
+test("validateRefund con devoluciones ya realizadas", () => {
+    const info = { pedido: "1", rts: "r", amount: 20 };
+    assert.equal(validateRefund(info, -5, 15).ok, true);
+    assert.equal(validateRefund(info, -5.01, 15).ok, false);
+    assert.equal(validateRefund(info, -5).ok, true);
+});
+
+test("la devolucion autorizada/desconocida guarda redsys_original_pedido; el cobro no", () => {
+    const ok = interpretPayResult(AUTH, { isRefund: true, originalPedido: "10549" });
+    assert.equal(ok.vals.redsys_original_pedido, "10549");
+    assert.equal(ok.vals.redsys_state, "refund");
+    const warn = interpretPayResult({ ...AUTH, warning: "AMOUNT_MISMATCH" }, { isRefund: true, originalPedido: "10549" });
+    assert.equal(warn.vals.redsys_original_pedido, "10549");
+    const unk = interpretPayResult({ status: "unknown", reference: "R" }, { isRefund: true, originalPedido: 10549 });
+    assert.equal(unk.vals.redsys_original_pedido, "10549");
+    assert.equal(interpretPayResult(AUTH).vals.redsys_original_pedido, undefined);
+    assert.equal(authorizedVals(AUTH, { originalPedido: "1" }).redsys_original_pedido, undefined);
 });

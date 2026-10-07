@@ -7,6 +7,7 @@ import { useService } from "@web/core/utils/hooks";
 import {
     canRefundRedsysLine,
     isRedsysMethod,
+    previousRefunds,
     refundableAmount,
     refundInfoFromOriginal,
     unresolvedLines,
@@ -67,9 +68,9 @@ patch(PaymentScreen.prototype, {
             if (usedUuids.includes(orig.uuid)) {
                 continue;
             }
-            // [PETICION-ORQUESTADOR] sin campo que enlace la devolución con la original no se
-            // acumulan devoluciones previas: lo impone Redsys (TPV-PC0100).
-            const room = refundableAmount(orig, []);
+            // Devoluciones previas contra este cobro (redsys_original_pedido) en los pedidos cargados;
+            // Redsys sigue imponiendo el límite real (TPV-PC0100).
+            const room = refundableAmount(orig, previousRefunds(orig, this.pos.models["pos.payment"].getAll()));
             if (room > 0) {
                 chosen = { orig, room };
                 break;
@@ -91,6 +92,7 @@ patch(PaymentScreen.prototype, {
             const line = this.paymentLines.at(-1);
             line.setAmount(-Math.min(due, chosen.room));
             line.uiState.redsysRefund = refundInfoFromOriginal(chosen.orig);
+            line.redsys_original_pedido = chosen.orig.transaction_id || false;
             this.numberBuffer.set(String(line.amount));
         }
         return res;
