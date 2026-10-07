@@ -15,6 +15,18 @@
             </xpath>
         </field>
     </record>
+
+    <!-- Oculta la descripción por defecto para que Intro tras elegir el producto pase a la cantidad -->
+    <record id="purchase_order_form_inherit_hide_line_name" model="ir.ui.view">
+        <field name="name">purchase.order.form.inherit.hide.line.name</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='order_line']/list/field[@name='name']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+        </field>
+    </record>
 </odoo>
 
 
