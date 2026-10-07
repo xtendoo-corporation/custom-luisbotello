@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kit de diagnóstico Redsys TPV-PC</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2330; --mut:#5b6475; --line:#d6dae3; --ok:#12733a; --ko:#b3261e; --warn:#8a5a00; --card:#f5f7fa; --btn:#1b4fd8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --fg:#e6e9ef; --mut:#9aa3b5; --line:#343b49; --card:#1d222b; --btn:#4b7bff; --ok:#4cc27d; --ko:#ff7b72; --warn:#e3b341; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif; max-width:980px; margin-inline:auto; }
+  h1 { font-size:1.35rem; margin:.2rem 0 .6rem; } h2 { font-size:1.05rem; margin:0 0 .6rem; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:12px 0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+  label { display:flex; flex-direction:column; font-size:.82rem; color:var(--mut); gap:3px; }
+  input { padding:7px; border:1px solid var(--line); border-radius:5px; background:var(--bg); color:var(--fg); font-size:.95rem; }
+  button { padding:8px 14px; border:0; border-radius:6px; background:var(--btn); color:#fff; font-size:.95rem; cursor:pointer; margin:3px 4px 3px 0; }
+  button.sec { background:transparent; color:var(--fg); border:1px solid var(--line); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px; overflow:auto; max-height:420px; white-space:pre-wrap; word-break:break-word; font-size:.8rem; margin:6px 0 0; }
+  table { border-collapse:collapse; width:100%; font-size:.88rem; } td,th { border-bottom:1px solid var(--line); padding:5px 6px; text-align:left; vertical-align:top; }
+  .ok { color:var(--ok); font-weight:600; } .ko { color:var(--ko); font-weight:600; } .warn { color:var(--warn); font-weight:600; } .mut { color:var(--mut); }
+  #banner { padding:10px 12px; border-radius:6px; margin:10px 0; display:none; border:1px solid var(--line); }
+  #banner.show { display:block; } #banner.err { border-color:var(--ko); } #banner.mock { border-color:var(--warn); }
+  code { font-size:.85em; }
+</style>
+</head>
+<body>
+<h1>Kit de diagnóstico Redsys TPV-PC Implantado</h1>
+<p class="mut">Independiente de Odoo. La clave de firma solo vive en memoria: no se guarda, no se escribe en el informe. Herramienta de pruebas, no de producción.</p>
+<div id="banner"></div>
+
+<section>
+  <h2>1. Chequeos automáticos de entorno</h2>
+  <button id="btnEnv">Ejecutar chequeos</button>
+  <button id="btnHttp" class="sec" title="Envía fnDllCheckStatus en JSON directo a localhost:10305 (S5), sin usar tpvpc-impl.js">Probar servicio HTTP directo (CheckStatus)</button>
+  <table id="envTable"><tbody></tbody></table>
+</section>
+
+<section>
+  <h2>2. Datos del comercio</h2>
+  <div class="grid">
+    <label>Comercio<input id="fComercio" autocomplete="off"></label>
+    <label>Terminal<input id="fTerminal" autocomplete="off" value="1"></label>
+    <label>Clave de firma (no se guarda)<input id="fClave" type="password" autocomplete="new-password"></label>
+    <label>Puerto (cConfPuerto)<input id="fPuerto" autocomplete="off" placeholder="COM9:,19200,N,8,1"></label>
+    <label>Versión (cVersion)<input id="fVersion" autocomplete="off" value="8.1" placeholder="6.1 u 8.1"></label>
+  </div>
+  <p class="mut">Pruebe también variantes de puerto/versión (p. ej. COM distinto, 6.1 y 8.1); cada intento queda en el informe. No repita Init en bucle: puede bloquear la cuenta.</p>
+</section>
+
+<section>
+  <h2>3. Operaciones</h2>
+  <button id="bInit" class="op">Init</button>
+  <button id="bCheck" class="op">CheckStatus</button>
+  <button id="bPay" class="op">Cobrar 0,01 €</button>
+  <button id="bRefund" class="op">Devolver 0,01 €</button>
+  <button id="bQuery" class="op">Consultar</button>
+  <button id="bStop" class="op sec">Parar</button>
+  <div class="grid" style="margin-top:8px">
+    <label>Factura (última)<input id="fFactura" autocomplete="off"></label>
+    <label>Pedido (última operación)<input id="fPedido" autocomplete="off"></label>
+    <label>Identificador RTS<input id="fRts" autocomplete="off"></label>
+  </div>
+  <p class="mut">Pedido y RTS se rellenan solos tras un cobro autorizado. "Consultar" busca la factura en ±10 min. Cobro con tarjeta real: se carga 0,01 € de verdad; use "Devolver" después.</p>
+  <h2 style="margin-top:12px">Respuestas crudas</h2>
+  <pre id="log">(sin actividad)</pre>
+</section>
+
+<section>
+  <h2>4. Informe</h2>
+  <button id="bReport">Descargar informe .json</button>
+  <span class="mut">Sin clave de firma y con PAN enmascarado/eliminado.</span>
+</section>
+
+<script type="module">
+"use strict";
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const MOCK = params.get('mock') === '1';
+const startedAt = new Date().toISOString();
+const entries = [];      // bitácora para el informe (sin secretos)
+const envResults = [];   // resultados chequeos
+let tpvpcImpl = null;
+let libState = { loaded: false, mock: MOCK, error: null };
+let lastFactura = null, lastPayStart = null;
+
+/* ---------- redacción ---------- */
+function redact(text) {
+  if (text == null) return text;
+  let s = String(text);
+  const k = $('fClave').value;
+  if (k && k.length >= 3) s = s.split(k).join('[CLAVE-OMITIDA]');
+  s = s.replace(/<(tarjeta[A-Za-z]*)>[^<]*<\/\1>/gi, '<$1>[PAN-OMITIDO]</$1>');
+  s = s.replace(/\b\d{13,19}\b/g, '[PAN-OMITIDO]');
+  s = s.replace(/\*{6,}\d{2,6}/g, '[PAN-ENMASCARADO]');
+  return s;
+}
+function keyOnly(text) {
+  const k = $('fClave').value; let s = String(text ?? '');
+  return (k && k.length >= 3) ? s.split(k).join('[CLAVE-OMITIDA]') : s;
+}
+
+/* ---------- log ---------- */
+function show(line) {
+  const el = $('log'); if (el.textContent === '(sin actividad)') el.textContent = '';
+  el.textContent += keyOnly(line) + '\n'; el.scrollTop = el.scrollHeight;
+}
+function record(action, args, ret, extra) {
+  const e = { ts: new Date().toISOString(), action, args: args ?? null,
+    response: ret ? ret.Response : null, result: ret ? ret.Result ?? null : null, ...extra };
+  entries.push(e);
+  show(`[${e.ts}] ${action} ${args ? JSON.stringify(args) : ''}\n  Response=${e.response}\n  Result=${e.result ?? 'null'}\n`);
+}
+
+/* ---------- mock propio del kit (NO es la librería de Redsys) ---------- */
+class MockTpvpc {
+  constructor() { this.ini = false; this.ops = []; this.seq = 1000; this.subs = {}; this.log = false; }
+  EnableLog() { this.log = true; } DisableLog() { this.log = false; }
+  subscribeEvent(name, cb) { (this.subs[name] ||= []).push(cb); }
+  _emit(n, ret) { (this.subs['pinpadImplantadoEvent_' + n] || []).forEach(cb => cb(ret || { Response: 0, Result: null })); }
+  _later(ms, f) { setTimeout(f, ms); }
+  initFnDll(args, cb) {
+    const [com, term, clave] = args;
+    this._later(300, () => {
+      if (!com) return cb({ Response: -3, Result: null });
+      if (!term) return cb({ Response: -4, Result: null });
+      if (!clave) return cb({ Response: -5, Result: null });
+      this.ini = true; cb({ Response: 0, Result: null });
+    });
+  }
+  execFnDll(name, args, cb) {
+    const done = (r, x) => this._later(250, () => cb({ Response: r, Result: x ?? null }));
+    if (name === 'fnDllCheckStatus') return done(this.ini ? 0 : -1);
+    if (name === 'fnDllParaTpvpcLatente') { this.ini = false; return done(0); }
+    if (!this.ini) return done(-1);
+    if (name === 'fnDllOperPinPad') {
+      const [imp, fac, tipo] = args; this._emit(1);
+      return this._later(1200, () => {
+        this._emit(4); this._emit(3);
+        const op = { pedido: String(++this.seq), rts: '0750022' + Date.now(), imp, fac, tipo: tipo || 'PAGO', fecha: new Date() };
+        this.ops.push(op);
+        cb({ Response: 0, Result: `<Operaciones version="6.0"><resultadoOperacion><estado>F</estado><resultado>Autorizada</resultado><codigoRespuesta>000000</codigoRespuesta><pedido>${op.pedido}</pedido><identificadorRTS>${op.rts}</identificadorRTS><importe>${imp}</importe><moneda>978</moneda><factura>${fac}</factura><tarjetaClienteRecibo>************0018</tarjetaClienteRecibo><marcaTarjeta>1</marcaTarjeta></resultadoOperacion></Operaciones>` });
+      });
+    }
+    if (name === 'fnDllOperComContable') {
+      const [ped, rts, imp] = args; const o = this.ops.find(x => x.pedido === ped);
+      if (!o) return done(-3);
+      return done(0, `<Operaciones version="6.0"><resultadoOperacion><estado>F</estado><resultado>Autorizada</resultado><pedido>${ped}</pedido><identificadorRTS>${rts}</identificadorRTS><importe>${imp}</importe><tipoOper>DEVOLUCION</tipoOper></resultadoOperacion></Operaciones>`);
+    }
+    if (name === 'fnDllOperConsulta') {
+      const fac = args[2]; const m = this.ops.filter(o => !fac || o.fac === fac);
+      const body = m.map(o => `<operacion><tipoOper>Autorizacion</tipoOper><tarjeta>************0018</tarjeta><importe>${o.imp}</importe><moneda>978</moneda><pedido>${o.pedido}</pedido><identificadorRTS>${o.rts}</identificadorRTS><factura>${o.fac}</factura><estado>F</estado><resultado>AUTORIZADA</resultado><codigoRespuesta>0</codigoRespuesta></operacion>`).join('');
+      return done(0, `<consultas version="2.1"><resultadoConsulta>${body}<numoperaciones>${m.length}</numoperaciones></resultadoConsulta></consultas>`);
+    }
+    return done(-13);
+  }
+}
+
+/* ---------- carga de la librería ---------- */
+async function loadLib() {
+  const b = $('banner');
+  if (MOCK) {
+    tpvpcImpl = new MockTpvpc(); libState = { loaded: true, mock: true, error: null };
+    b.className = 'show mock'; b.innerHTML = '<b>MODO SIMULADO (?mock=1).</b> No se habla con ningún datáfono ni con Redsys. Los resultados NO sirven para validar S1-S5. El informe quedará marcado como mock.';
+    return;
+  }
+  try {
+    const mod = await import('./tpvpc-impl.js');
+    if (!mod || typeof mod.TpvpcImplantado !== 'function') throw new Error('El módulo se cargó pero no exporta la clase TpvpcImplantado (S4: revisar el fichero entregado por Redsys).');
+    tpvpcImpl = new mod.TpvpcImplantado(); window.tpvpcImpl = tpvpcImpl;
+    libState = { loaded: true, mock: false, error: null };
+  } catch (e) {
+    libState = { loaded: false, mock: false, error: String(e && e.message || e) };
+    b.className = 'show err';
+    b.innerHTML = '<b>No se pudo cargar <code>./tpvpc-impl.js</code>.</b> Copie el fichero oficial de Redsys (portal canales.redsys.es, Documentación) junto a este index.html, sirva la carpeta por HTTPS y recargue. Detalle: <code id="errDetail"></code><br>Mientras tanto puede ejecutar los chequeos de entorno y la prueba HTTP directa, o ensayar con <code>?mock=1</code>.';
+    $('errDetail').textContent = libState.error;
+    document.querySelectorAll('button.op').forEach(x => x.disabled = true);
+  }
+}
+
+/* ---------- helpers de operación ---------- */
+function xmlField(xml, tag) {
+  if (!xml) return null;
+  try { const d = new DOMParser().parseFromString(xml, 'text/xml'); const n = d.getElementsByTagName(tag)[0]; if (n) return n.textContent; } catch (_) {}
+  const m = new RegExp('<' + tag + '>([^<]*)</' + tag + '>', 'i').exec(xml); return m ? m[1] : null;
+}
+function call(action, name, args, extra) {
+  return new Promise((resolve) => {
+    if (!tpvpcImpl) { show('Librería no cargada.'); return resolve(null); }
+    const cb = (ret) => { record(action, name === 'init' ? 'Init(comercio,terminal,***,puerto,versión)' : args, ret, extra); resolve(ret); };
+    try { name === 'init' ? tpvpcImpl.initFnDll(args, cb) : tpvpcImpl.execFnDll(name, args, cb); }
+    catch (e) { record(action, args, null, { exception: String(e) }); resolve(null); }
+  });
+}
+function stamp(d) { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())} ${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+const val = (id) => $(id).value.trim();
+
+function wireEvents() {
+  if (!tpvpcImpl) return;
+  for (let i = 1; i <= 7; i++) tpvpcImpl.subscribeEvent('pinpadImplantadoEvent_' + i, (ret) => {
+    entries.push({ ts: new Date().toISOString(), action: 'evento_' + i, response: ret?.Response ?? null, result: redact(ret?.Result ?? null) }); show(`[evento ${i}]`);
+  });
+}
+
+$('bInit').onclick = () => call('Init', 'init', [val('fComercio'), val('fTerminal'), $('fClave').value, val('fPuerto'), val('fVersion')],
+  { puerto: val('fPuerto'), version: val('fVersion'), comercio: val('fComercio'), terminal: val('fTerminal') });
+$('bCheck').onclick = () => call('CheckStatus', 'fnDllCheckStatus', []);
+$('bStop').onclick = () => call('Parar', 'fnDllParaTpvpcLatente', []);
+$('bPay').onclick = async () => {
+  if (!confirm('Se cobrará 0,01 € con la tarjeta que se pase por el datáfono. ¿Continuar?')) return;
+  lastFactura = 'KIT' + Date.now().toString(36).toUpperCase().slice(-8); $('fFactura').value = lastFactura;
+  lastPayStart = new Date();
+  const ret = await call('Cobrar', 'fnDllOperPinPad', ['0.01', lastFactura, 'PAGO'], { inicio: lastPayStart.toISOString() });
+  if (ret && ret.Response === 0 && ret.Result) {
+    const estado = xmlField(ret.Result, 'estado'), res = (xmlField(ret.Result, 'resultado') || '').toLowerCase();
+    const ok = estado === 'F' && res === 'autorizada';
+    show(ok ? '=> AUTORIZADA (estado=F)' : `=> NO autorizada (estado=${estado}, resultado=${res})`);
+    if (ok) { $('fPedido').value = xmlField(ret.Result, 'pedido') || ''; $('fRts').value = xmlField(ret.Result, 'identificadorRTS') || ''; }
+  } else if (ret && ret.Response === -2) show('=> -2: resultado DESCONOCIDO. Pulse "Consultar" antes de reintentar (riesgo de doble cobro).');
+};
+$('bRefund').onclick = () => {
+  if (!val('fPedido')) return show('Falta el número de pedido (lo rellena un cobro autorizado).');
+  if (!confirm('Se devolverá 0,01 € a la tarjeta original. ¿Continuar?')) return;
+  call('Devolver', 'fnDllOperComContable', [val('fPedido'), val('fRts'), '0.01', '', 'DEVOLUCION']);
+};
+$('bQuery').onclick = () => {
+  const c = lastPayStart || new Date(); const a = new Date(c.getTime() - 600000), z = new Date(c.getTime() + 600000 + 120000);
+  call('Consultar', 'fnDllOperConsulta', [null, null, val('fFactura') || null, stamp(a), stamp(z), 'PAGO', null, '0']);
+};
+
+/* ---------- chequeos de entorno ---------- */
+const violations = [];
+document.addEventListener('securitypolicyviolation', (e) => violations.push(e.violatedDirective + ' ' + e.blockedURI));
+function addEnv(name, status, detail) {
+  envResults.push({ check: name, status, detail });
+  const tr = document.createElement('tr'); const cls = status === 'OK' ? 'ok' : status === 'FALLO' ? 'ko' : status === 'AVISO' ? 'warn' : 'mut';
+  tr.innerHTML = `<td></td><td class="${cls}"></td><td></td>`; tr.children[0].textContent = name; tr.children[1].textContent = status; tr.children[2].textContent = detail;
+  $('envTable').tBodies[0].appendChild(tr);
+}
+async function probe(url, init, ms = 4000) {
+  const t0 = performance.now(), c = new AbortController(), tm = setTimeout(() => c.abort(), ms);
+  try { const r = await fetch(url, { ...init, signal: c.signal }); return { ok: true, type: r.type, status: r.status, ms: Math.round(performance.now() - t0), r }; }
+  catch (e) { return { ok: false, err: `${e.name}: ${e.message}`, ms: Math.round(performance.now() - t0) }; }
+  finally { clearTimeout(tm); }
+}
+function wsProbe(port, ms = 3000) {
+  return new Promise((res) => { const t0 = performance.now(); let w; const f = (r) => { try { w.close(); } catch (_) {} res({ r, ms: Math.round(performance.now() - t0) }); };
+    try { w = new WebSocket('ws://localhost:' + port); } catch (e) { return res({ r: 'excepción: ' + e.message, ms: 0 }); }
+    w.onopen = () => f('abierto'); w.onerror = () => f('error/cerrado'); setTimeout(() => f('timeout'), ms); });
+}
+async function runEnv() {
+  $('envTable').tBodies[0].innerHTML = ''; envResults.length = 0; violations.length = 0;
+  $('btnEnv').disabled = true;
+  addEnv('Origen de la página', location.protocol === 'https:' ? 'OK' : 'AVISO', `${location.origin} (protocolo ${location.protocol}). S1 solo es representativo desde un origen HTTPS (no file://, no http://).`);
+  addEnv('Contexto seguro (isSecureContext)', window.isSecureContext ? 'OK' : 'AVISO', String(window.isSecureContext));
+  const b = (navigator.userAgentData && navigator.userAgentData.brands || []).map(x => `${x.brand} ${x.version}`).join(', ');
+  addEnv('Navegador', 'INFO', `${b || 'sin userAgentData'} | ${navigator.userAgent} | plataforma: ${navigator.userAgentData?.platform || navigator.platform}`);
+  addEnv('tpvpc-impl.js', libState.loaded ? (libState.mock ? 'AVISO' : 'OK') : 'FALLO', libState.mock ? 'Modo mock: no se usa la librería real' : (libState.loaded ? 'Cargado' : libState.error));
+  try { const p = await navigator.permissions.query({ name: 'local-network-access' }); addEnv('Permiso acceso a red local (Chrome)', 'INFO', 'estado: ' + p.state + ' (si "prompt", el navegador pedirá permiso al llamar a localhost: acéptelo)'); }
+  catch (_) { addEnv('Permiso acceso a red local (Chrome)', 'INFO', 'API no disponible en este navegador/versión (normal).'); }
+
+  const g = await probe('http://localhost:10305/', { mode: 'no-cors', cache: 'no-store' });
+  addEnv('localhost:10305 GET no-cors', g.ok ? 'OK' : 'FALLO', g.ok ? `Respuesta opaca/${g.type} en ${g.ms} ms: hay algo escuchando y el navegador no lo bloquea.` : `${g.err} (${g.ms} ms). Ambiguo: servicio parado, puerto cerrado, contenido mixto o Private Network Access. Revise consola (F12) y el estado del servicio.`);
+  const p1 = await probe('http://localhost:10305/', { method: 'POST', mode: 'no-cors', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ Type: 'func', PinpadId: '1', Command: 'fnDllCheckStatus', Args: [] }) });
+  addEnv('localhost:10305 POST no-cors (text/plain)', p1.ok ? 'OK' : 'FALLO', p1.ok ? `Enviado, respuesta ${p1.type} en ${p1.ms} ms (no legible por no-cors).` : `${p1.err} (${p1.ms} ms)`);
+  const p2 = await probe('http://localhost:10305/', { method: 'POST', mode: 'cors', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Type: 'func', PinpadId: '1', Command: 'fnDllCheckStatus', Args: [] }) });
+  if (p2.ok) { let t = ''; try { t = await p2.r.text(); } catch (_) {} addEnv('localhost:10305 POST cors (application/json)', 'OK', `HTTP ${p2.status} en ${p2.ms} ms; cuerpo: ${redact(t).slice(0, 300)}`); }
+  else addEnv('localhost:10305 POST cors (application/json)', 'FALLO', `${p2.err} (${p2.ms} ms). Si los no-cors anteriores van bien y este falla: CORS/preflight (relevante para S5; el JS de Redsys puede evitarlo).`);
+  for (const port of [9100, 10205]) {
+    const r = await probe('http://localhost:' + port + '/', { mode: 'no-cors', cache: 'no-store' }, 3000);
+    const w = await wsProbe(port);
+    addEnv(`localhost:${port}`, r.ok || w.r === 'abierto' ? 'OK' : 'INFO', `fetch no-cors: ${r.ok ? 'respondió (' + r.ms + ' ms)' : r.err}; WebSocket: ${w.r}. Un fallo no prueba que el puerto esté cerrado (puede hablar otro protocolo); lo concluyente es "netstat -ano | findstr :${port}" en el PC.`);
+  }
+  addEnv('Violaciones de seguridad capturadas', violations.length ? 'AVISO' : 'INFO', violations.length ? violations.join(' | ') : 'ninguna (el bloqueo por contenido mixto/PNA suele verse solo en la consola F12: pegue allí lo que aparezca en rojo).');
+  $('btnEnv').disabled = false;
+}
+$('btnEnv').onclick = runEnv;
+$('btnHttp').onclick = async () => {
+  const body = { Type: 'func', PinpadId: '1', Command: 'fnDllCheckStatus', Args: [] };
+  const r = await probe('http://localhost:10305/', { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 6000);
+  let txt = null; if (r.ok) { try { txt = await r.r.text(); } catch (_) {} }
+  entries.push({ ts: new Date().toISOString(), action: 'http_directo_CheckStatus', request: body, ok: r.ok, status: r.status ?? null, error: r.err ?? null, body: redact(txt) });
+  show(`HTTP directo CheckStatus: ${r.ok ? 'HTTP ' + r.status + ' ' + redact(txt) : r.err}`);
+};
+
+/* ---------- informe ---------- */
+$('bReport').onclick = () => {
+  const report = { kit: 'diagnostic_kit v1', generado: new Date().toISOString(), inicio_sesion: startedAt, mock: libState.mock,
+    libreria: { cargada: libState.loaded, error: libState.error },
+    entorno: { url: location.origin + location.pathname, protocolo: location.protocol, isSecureContext: window.isSecureContext, userAgent: navigator.userAgent,
+      brands: navigator.userAgentData?.brands ?? null, plataforma: navigator.userAgentData?.platform || navigator.platform },
+    parametros: { comercio: val('fComercio'), terminal: val('fTerminal'), puerto: val('fPuerto'), version: val('fVersion') },
+    chequeos: envResults, operaciones: entries };
+  const json = redact(JSON.stringify(report, null, 2));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  a.download = `informe_redsys_kit_${new Date().toISOString().replace(/[:.]/g, '-')}.json`; document.body.appendChild(a); a.click(); a.remove();
+};
+
+await loadLib(); wireEvents(); runEnv();
+</script>
+</body>
+</html>
