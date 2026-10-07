@@ -238,3 +238,22 @@ Tras cada corrección: quitar la marca `todo` del test JS correspondiente (o inv
 | QA-18 | ABIERTO | `unknown -> False` sigue permitido (lo usa el cliente) |
 
 Los tests `test_qa_known_issue_*` Python se reescribieron para afirmar el comportamiento correcto. Ver DECISIONS.md "Correcciones QA backend".
+
+## 9. Estado de correcciones cliente (JS)
+
+| ID | Estado | Nota |
+|---|---|---|
+| QA-01 | Estado: corregido en ae3a691 | gracia 2 min desde el inicio del cobro + checkStatus 0 + confirmación del cajero (`releaseLine`); reconsulta automática |
+| QA-02 | Estado: corregido en ae3a691 | `-98`/timeout local => `unknown`; `isBusy` sigue ocupado hasta retorno tardío/`orphanMs` |
+| QA-04 | Estado: corregido en ae3a691 | `_recover` coteja importe (`AMOUNT_MISMATCH`) |
+| QA-10 | Estado: corregido en ae3a691 (parcial) | firma `MOCK...` en el XML simulado; falta rechazo en servidor (QA-20) e insignia fija |
+| QA-14 | Estado: corregido en ae3a691 | contador de bloqueos en `recoverOrder` |
+| QA-15 | Estado: corregido en ae3a691 | `recoverLine` salta líneas con cobro en curso |
+| QA-11 | Estado: corregido en ea86d95 | `_run` no reenvía unknown/authorized/refund |
+| QA-13 | Estado: corregido en ea86d95 | `sendPaymentRequest` idempotente por línea |
+| QA-22 | Estado: corregido en ea86d95 | Web Locks `redsys-<comercio>-<terminal>`; sin locks degrada al guardián -3 |
+| QA-23 | Estado: corregido en ea86d95 | override `deletePaymentLine` + `canDeleteRedsysLine` |
+| QA-24 | Estado: corregido en ea86d95 | `refundInfoFor` por `redsys_original_pedido`; ambiguo => rechaza |
+| QA-03/05/06/07/08/09/12/25 | Estado: sin corregir (BAJOS, fuera de alcance) | sus tests siguen como `todo` |
+
+Verificación: `node --test tests_js/` => 0 fallos (8 todo, todos BAJOS). Sin navegador: `PaymentScreen` real, `localStorage` real y Web Locks reales no se han ejercitado (réplicas/stubs). Ver DECISIONS.md "Correcciones QA cliente".
