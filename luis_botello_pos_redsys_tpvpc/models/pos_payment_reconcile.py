@@ -1,4 +1,4 @@
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 
 
 class PosPaymentRedsysReconcile(models.TransientModel):
@@ -23,6 +23,24 @@ class PosPaymentRedsysReconcile(models.TransientModel):
         required=True,
         help="Evidence used (Redsys portal operation, date, who checked it).",
     )
+
+    warning = fields.Text(compute="_compute_warning")
+
+    @api.depends("resolution", "payment_ids")
+    def _compute_warning(self):
+        """QA2-05: una línea `not_charged` en un pedido YA pagado se queda en él y sigue contando como
+        pagada (borrarla desbarataría el pedido y su contabilidad): avisar al manager."""
+        for wiz in self:
+            paid = wiz.payment_ids.filtered(lambda p: p.pos_order_id.state != "draft")
+            if wiz.resolution == "not_charged" and paid:
+                wiz.warning = _(
+                    "The orders %s are already paid: the line stays in the order and keeps counting as "
+                    "paid. Correct the order/accounting manually (this reconciliation only records that "
+                    "no card charge exists).",
+                    ", ".join(paid.pos_order_id.mapped("display_name")),
+                )
+            else:
+                wiz.warning = False
 
     @api.model
     def default_get(self, fields_list):

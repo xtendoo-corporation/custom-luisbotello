@@ -67,6 +67,9 @@
         <field name="model">pos.payment.redsys.reconcile</field>
         <field name="arch" type="xml">
             <form string="Reconcile Redsys payments">
+                <div class="alert alert-warning" role="alert" invisible="not warning">
+                    <field name="warning" nolabel="1"/>
+                </div>
                 <group>
                     <field name="payment_ids" widget="many2many_tags" options="{'no_create': True}"/>
                     <field name="resolution" widget="radio"/>

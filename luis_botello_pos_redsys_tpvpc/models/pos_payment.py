@@ -1,4 +1,5 @@
 from lxml import etree
+from psycopg2 import IntegrityError
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -32,6 +33,11 @@ REDSYS_RESOLUTION_FIELDS = {
     "redsys_resolved_by_id",
     "redsys_resolved_date",
 }
+
+
+def redsys_bypass(env):
+    """Solo código servidor con sudo: un contexto enviado por RPC no basta (D10)."""
+    return bool(env.su and env.context.get("redsys_force_unlink"))
 
 
 def _norm(value):
@@ -71,6 +77,26 @@ class PosPayment(models.Model):
     redsys_resolved_date = fields.Datetime(
         string="Reconciled on", copy=False, readonly=True
     )
+
+    def init(self):
+        """QA2-17: unicidad también en BD (dos sincronizaciones concurrentes podrían pasar la búsqueda
+        Python a la vez). Índices únicos PARCIALES: solo cobros `authorized` (las devoluciones comparten
+        pedido/RTS con el cobro original y las líneas unknown aún no tienen identificadores)."""
+        super().init()
+        cr = self.env.cr
+        for column in ("transaction_id", "redsys_rts"):
+            name = f"pos_payment_redsys_{column}_authorized_uniq"
+            try:
+                with cr.savepoint():
+                    cr.execute(
+                        f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON pos_payment "
+                        f"(payment_method_id, {column}) "
+                        f"WHERE redsys_state = 'authorized' AND {column} IS NOT NULL AND {column} <> ''"
+                    )
+            except Exception:  # noqa: BLE001
+                # Datos previos duplicados: no impedir la actualización; queda la comprobación Python.
+                # (Sin logging: política del módulo, ver test_qa_no_logging_or_print_in_python.)
+                continue
 
     # ------------------------------------------------------------------ validación (QA-20)
 
@@ -146,6 +172,13 @@ class PosPayment(models.Model):
                 errors.append(_("the merchant does not match the payment method"))
             if xml.get("terminal") and xml["terminal"] != method.sudo().redsys_terminal_number:
                 errors.append(_("the terminal does not match the payment method"))
+            # QA2-06: el signo debe corresponder al estado (una devolución es negativa, un cobro positivo)
+            if pay.redsys_state == "refund" and pay.amount >= 0:
+                errors.append(_("a refund must have a negative amount"))
+            if pay.redsys_state == "authorized" and pay.amount <= 0:
+                errors.append(_("a charge must have a positive amount"))
+            if pay.redsys_state == "refund" and pay.redsys_original_pedido and not errors:
+                errors.extend(pay._redsys_refund_errors())
             if errors:
                 raise ValidationError(
                     _(
@@ -185,6 +218,64 @@ class PosPayment(models.Model):
                     )
                 )
 
+    @staticmethod
+    def _redsys_integrity_error(err):
+        """QA2-17: el índice único de BD rechazó un duplicado concurrente: mismo mensaje que la comprobación
+        Python; cualquier otra violación de integridad se propaga tal cual."""
+        if "pos_payment_redsys_" in str(err):
+            return ValidationError(
+                _("Redsys order / RTS is already registered in another payment.")
+            )
+        return err
+
+    def _redsys_refund_errors(self):
+        """QA2-06: una devolución con `redsys_original_pedido` debe colgar de un cobro `authorized` del
+        mismo método con ese pedido, no repetir otra devolución ya registrada (misma referencia o mismos
+        pedido+RTS sin referencias distintas) y no superar, junto con las anteriores, el importe cobrado."""
+        self.ensure_one()
+        errors = []
+        method = self.payment_method_id
+        Payment = self.sudo().with_context(active_test=False)
+        original = Payment.search(
+            [
+                ("id", "!=", self.id),
+                ("payment_method_id", "=", method.id),
+                ("redsys_state", "=", "authorized"),
+                ("transaction_id", "=", self.redsys_original_pedido),
+            ],
+            limit=1,
+        )
+        if not original:
+            return [_("the original charge %s is not registered", self.redsys_original_pedido)]
+        others = Payment.search(
+            [
+                ("id", "!=", self.id),
+                ("payment_method_id", "=", method.id),
+                ("redsys_state", "=", "refund"),
+                ("redsys_original_pedido", "=", self.redsys_original_pedido),
+            ]
+        )
+        for other in others:
+            same_ref = (
+                other.redsys_reference
+                and self.redsys_reference
+                and other.redsys_reference == self.redsys_reference
+            )
+            no_refs = not (other.redsys_reference and self.redsys_reference)
+            same_ids = (
+                other.transaction_id == self.transaction_id
+                and other.redsys_rts == self.redsys_rts
+            )
+            if same_ref or (no_refs and same_ids):
+                errors.append(_("this refund is already registered in another payment"))
+                break
+        refunded = sum(abs(o.amount) for o in others)
+        if float_compare(refunded + abs(self.amount), original.amount, precision_digits=2) > 0:
+            errors.append(
+                _("the refunds exceed the original charge (%(orig)s)", orig=original.amount)
+            )
+        return errors
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -196,7 +287,11 @@ class PosPayment(models.Model):
             v.get("redsys_state") == "not_charged" for v in vals_list
         ):
             raise UserError(_("Use the reconcile action to resolve unknown payments."))
-        records = super().create(vals_list)
+        try:
+            with self.env.cr.savepoint():
+                records = super().create(vals_list)
+        except IntegrityError as err:
+            raise self._redsys_integrity_error(err) from err
         records.filtered(
             lambda p: p.redsys_state in REDSYS_CONFIRMED_STATES
         )._redsys_validate_authorization()
@@ -205,12 +300,28 @@ class PosPayment(models.Model):
     # ------------------------------------------------------------------ protección (D10)
 
     def _redsys_bypass(self):
-        # Solo código servidor con sudo: un contexto enviado por RPC no basta.
-        return self.env.su and self.env.context.get("redsys_force_unlink")
+        return redsys_bypass(self.env)
+
+    @staticmethod
+    def _redsys_removable(pay):
+        """QA2-04/05: una línea `not_charged` (conciliada o liberada con auditoría: NO hubo cargo) puede
+        eliminarse mientras su pedido siga en borrador (aún no hay contabilidad). En un pedido ya pagado
+        se queda: borrarla desbarataría el pedido (ver DECISIONS, QA2-05)."""
+        return pay.redsys_state == "not_charged" and pay.pos_order_id.state == "draft"
 
     def unlink(self):
         if not self._redsys_bypass():
-            locked = self.filtered(lambda p: p.redsys_state in REDSYS_PROTECTED_STATES)
+            locked = self.filtered(
+                lambda p: p.redsys_state in REDSYS_PROTECTED_STATES and not self._redsys_removable(p)
+            )
+            for pay in self - locked:
+                if pay.redsys_state == "not_charged":
+                    pay.pos_order_id.sudo().message_post(
+                        body=_(
+                            "Redsys payment %(ref)s (reconciled: not charged) removed from the draft order.",
+                            ref=pay.redsys_reference or "-",
+                        )
+                    )
             if locked:
                 raise UserError(
                     _(
@@ -258,6 +369,19 @@ class PosPayment(models.Model):
     def write(self, vals):
         if self._redsys_bypass():
             return super().write(vals)
+        if vals.get("redsys_state") == "unknown":
+            # QA2-09: copia obsoleta del POS (la línea ya la resolvió un manager o un reenvío anterior): el
+            # reenvío de `unknown` es un no-op para los campos Redsys; el resto de campos de UI sí se guardan.
+            stale = self.filtered(
+                lambda p: p.redsys_state in ("authorized", "refund", "not_charged")
+            )
+            if stale:
+                ignored = REDSYS_LOCKED_FIELDS | {"redsys_state", "payment_status"}
+                clean = {k: v for k, v in vals.items() if k not in ignored}
+                if clean:
+                    stale.write(clean)
+                rest = self - stale
+                return rest.write(vals) if rest else True
         if REDSYS_RESOLUTION_FIELDS & vals.keys() and not self.env.su:
             raise UserError(
                 _("Reconciliation data can only be set by the reconcile action.")
@@ -272,12 +396,60 @@ class PosPayment(models.Model):
                     ", ".join(sorted(forbidden)),
                 )
             )
-        result = super().write(vals)
+        try:
+            with self.env.cr.savepoint():
+                result = super().write(vals)
+        except IntegrityError as err:
+            raise self._redsys_integrity_error(err) from err
         if changed:
             self.filtered(
                 lambda p: p.redsys_state in REDSYS_CONFIRMED_STATES
             )._redsys_validate_authorization()
         return result
+
+    def redsys_release_unknown(self):
+        """QA2-04: liberación por el CAJERO de una línea `unknown` ya sincronizada (el POS no puede
+        modificarla ni borrarla, D10). Solo si el pedido sigue en borrador y la línea NO tiene ningún
+        rastro de Redsys (ni pedido, ni RTS, ni XML): las dudosas con XML (importe distinto, varias
+        autorizadas) las concilia un manager. Queda `not_charged` auditada (usuario, fecha, nota) y se
+        anota en el pedido; el POS la borra después y el cajero añade un pago nuevo."""
+        if not self.env.user.has_group("point_of_sale.group_pos_user"):
+            raise AccessError(_("Only Point of Sale users can release payments."))
+        if not self:
+            raise UserError(_("No payment to release."))
+        self.check_access("write")
+        user = self.env.user
+        for pay in self.sudo():
+            if pay.redsys_state != "unknown":
+                raise UserError(_("Only payments in Redsys state 'Unknown' can be released."))
+            if pay.pos_order_id.state != "draft":
+                raise UserError(
+                    _("The order is already paid: ask a manager to reconcile the payment.")
+                )
+            if pay.transaction_id or pay.redsys_rts or (pay.redsys_xml or "").strip():
+                raise UserError(
+                    _(
+                        "This payment has Redsys data (order/RTS/XML): ask a manager to reconcile it "
+                        "against the Redsys portal."
+                    )
+                )
+            note = _("Released by the cashier from the POS after checking that no charge exists.")
+            super(PosPayment, pay).write(
+                {
+                    "redsys_state": "not_charged",
+                    "redsys_resolution_note": note,
+                    "redsys_resolved_by_id": user.id,
+                    "redsys_resolved_date": fields.Datetime.now(),
+                }
+            )
+            pay.pos_order_id.message_post(
+                body=_(
+                    "Redsys payment %(ref)s released by %(user)s (no charge).",
+                    ref=pay.redsys_reference or "-",
+                    user=user.name,
+                )
+            )
+        return True
 
     # ------------------------------------------------------------------ conciliación (QA-21)
 
@@ -312,5 +484,14 @@ class PosPayment(models.Model):
                     "redsys_resolved_by_id": self.env.user.id,
                     "redsys_resolved_date": fields.Datetime.now(),
                 }
+            )
+            pay.pos_order_id.sudo().message_post(
+                body=_(
+                    "Redsys payment %(ref)s reconciled as %(state)s by %(user)s: %(note)s",
+                    ref=pay.redsys_reference or "-",
+                    state=state,
+                    user=self.env.user.name,
+                    note=note,
+                )
             )
         return True

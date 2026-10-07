@@ -142,7 +142,7 @@ class TestRedsysBackend(TestPoSCommon):
         self.assertEqual(self.env["pos.payment"]._load_pos_data_fields(self.config), [])
 
     def test_original_pedido_field(self):
-        payment = self._make_payment("refund")
+        payment = self._make_payment("authorized")
         self.assertFalse(payment.redsys_original_pedido)
         order = payment.pos_order_id
         refund = self.env["pos.payment"].create(
@@ -227,7 +227,8 @@ class TestRedsysBackend(TestPoSCommon):
         self.assertEqual(payment.redsys_resolved_by_id, self.pos_manager)
         self.assertTrue(payment.redsys_resolved_date)
         self.assertEqual(payment.redsys_resolution_note, "Portal: sin cargo")
-        with self.assertRaises(UserError):  # ya conciliada, protegida
+        payment.pos_order_id.write({"state": "paid"})  # QA2-05: en borrador sí se puede borrar
+        with self.assertRaises(UserError):  # ya conciliada en un pedido pagado, protegida
             payment.unlink()
         with self.assertRaises(UserError):
             payment.with_user(self.pos_manager).redsys_reconcile("charged", "otra vez")

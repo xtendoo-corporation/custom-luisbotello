@@ -1,15 +1,18 @@
 """QA independiente, segunda ronda (backend). Ver docs/qa_report2.md.
 
-Convención (igual que la ronda 1): los tests `test_qa2_known_issue_*` AFIRMAN el comportamiento ACTUAL
-(inseguro o incompleto) de un hallazgo NUEVO; el docstring dice el comportamiento deseado. Al corregirlo
-fallarán a propósito y hay que invertir la aserción. El resto son comprobaciones del flujo REAL de
-sincronización (`pos.order.sync_from_ui`, el mismo camino que usa el POS) que hoy se cumplen.
+Ronda 3: los antiguos `test_qa2_known_issue_*` (que afirmaban el comportamiento defectuoso) se han
+convertido en `test_qa2_NN_*`, que afirman el comportamiento CORRECTO. `test_qa2_server_cannot_tell_a_forged_xml...`
+se mantiene como caracterización de un límite declarado (no se verifica la firma). El resto son comprobaciones del
+flujo REAL de sincronización (`pos.order.sync_from_ui`, el mismo camino que usa el POS).
 """
 from uuid import uuid4
+
+from psycopg2 import IntegrityError
 
 from odoo import Command, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
+from odoo.tools import mute_logger
 from odoo.addons.point_of_sale.tests.common import TestPoSCommon
 
 from .redsys_xml import redsys_query_op_xml, redsys_xml
@@ -135,99 +138,181 @@ class TestRedsysQA2(TestPoSCommon):
 
     # ------------------------------------------------------------------ hallazgos nuevos
 
-    def test_qa2_known_issue_synced_unknown_line_cannot_be_removed_by_the_pos(self):
-        """NUEVO (ALTO) QA2-04. Escenario: un pedido en borrador (guardado para después / sync de fondo) ya
-        tiene la línea `unknown` en servidor. El cajero verifica en el portal que NO se cobró, la libera
-        (`unknown -> False` solo en cliente) y la borra: el POS envía `[2, id]` al validar. El servidor la
-        rechaza (D10) y el pedido NO se puede cerrar. Deseado: permitir el borrado de una línea `unknown`
-        cuando el mismo envío la libera, o que el POS sincronice antes el estado liberado."""
+    def _cash(self):
+        return {"amount": 10.0, "name": fields.Datetime.to_string(fields.Datetime.now()),
+                "payment_method_id": self.cash_pm1.id, "uuid": str(uuid4())}
+
+    def test_qa2_04_synced_unknown_line_released_by_cashier_then_order_closes(self):
+        """QA2-04. Pedido en borrador con la línea `unknown` ya en servidor. Borrarla sin más sigue
+        prohibido (D10). El cajero la libera con `redsys_release_unknown` (auditada: not_charged con
+        usuario/fecha/nota y mensaje en el pedido); el POS envía entonces `[2, id]` + efectivo y el pedido
+        cierra. Flujo real con sync_from_ui."""
         line = self._line("unknown")
         order, data = self._sync([line], draft=True)
         pay = order.payment_ids
-        cash = {"amount": 10.0, "name": fields.Datetime.to_string(fields.Datetime.now()),
-                "payment_method_id": self.cash_pm1.id, "uuid": str(uuid4())}
-        with self.assertRaises(UserError):
+        with self.assertRaises(UserError):  # sin liberar, D10 sigue protegiendo la línea
             self.env["pos.order"].sync_from_ui(
-                [dict(data, state="paid", payment_ids=[[2, pay.id], [0, 0, cash]])]
+                [dict(data, state="paid", payment_ids=[[2, pay.id], [0, 0, self._cash()]])]
             )
-        self.assertEqual(order.state, "draft", "el pedido queda sin cerrar")
+        self.assertEqual(order.state, "draft")
+        pay_id = pay.id
+        pay.with_user(self.cashier).redsys_release_unknown()
+        self.assertEqual(pay.redsys_state, "not_charged")
+        self.assertEqual(pay.redsys_resolved_by_id, self.cashier)
+        self.assertTrue(pay.redsys_resolved_date and pay.redsys_resolution_note)
+        self.assertIn("released", order.message_ids[:1].body.lower())
+        # el POS reenvía la copia local ya `not_charged` (no `unknown -> False`) y borra la línea
+        self.env["pos.order"].sync_from_ui(
+            [dict(data, state="paid", payment_ids=[[2, pay_id], [0, 0, self._cash()]])]
+        )
+        self.assertEqual(order.state, "paid")
+        self.assertFalse(self.env["pos.payment"].browse(pay_id).exists())
+        self.assertEqual(order.payment_ids.payment_method_id, self.cash_pm1)
 
-    def test_qa2_known_issue_not_charged_line_is_stuck_in_the_order(self):
-        """NUEVO (MEDIO) QA2-05. Tras conciliar como `not_charged` la línea no se puede borrar ni siquiera
-        un manager, y el pedido sigue contando ese importe como pagado (amount_paid): contabilidad con un
-        cobro con tarjeta que no existió. Deseado: flujo de corrección (excluir la línea del pagado o
-        permitir al manager anularla con traza)."""
-        order, _data = self._sync([self._line("unknown")])
-        pay = order.payment_ids
-        self.assertEqual(order.amount_paid, 10.0)
-        pay.with_user(self.manager).redsys_reconcile("not_charged", "Sin cargo en el portal")
+    def test_qa2_04_release_is_restricted(self):
+        """La liberación del cajero NO sirve para saltarse D10 en otros casos."""
+        # autorizado: no es unknown
+        order, _data = self._sync([self._line("authorized")], draft=True)
+        with self.assertRaises(UserError):
+            order.payment_ids.with_user(self.cashier).redsys_release_unknown()
+        # unknown con rastro de Redsys (XML/RTS de un importe dudoso): lo concilia un manager
+        dudosa = self._line("unknown", transaction_id="123456789013", redsys_rts="RTS-OTRO-0001",
+                            redsys_xml=redsys_xml(7.0, pedido="123456789013", rts="RTS-OTRO-0001"))
+        order2, _ = self._sync([dudosa], draft=True)
+        with self.assertRaises(UserError):
+            order2.payment_ids.with_user(self.cashier).redsys_release_unknown()
+        # unknown limpio pero en un pedido ya pagado
+        order3, _ = self._sync([self._line("unknown")])
+        self.assertEqual(order3.state, "paid")
+        with self.assertRaises(UserError):
+            order3.payment_ids.with_user(self.cashier).redsys_release_unknown()
+        self.assertEqual(order3.payment_ids.redsys_state, "unknown")
+
+    def test_qa2_05_not_charged_line_removable_in_draft_stuck_in_paid(self):
+        """QA2-05 (PARCIAL). Una línea `not_charged` se puede borrar mientras el pedido sea borrador (queda
+        rastro en el chatter); en un pedido ya pagado se queda (borrarla desbarataría el pedido) y el
+        wizard de conciliación avisa de que el pedido sigue contando ese importe como pagado."""
+        draft, _data = self._sync([self._line("unknown")], draft=True)
+        draft.payment_ids.with_user(self.manager).redsys_reconcile("not_charged", "Sin cargo en el portal")
+        draft.payment_ids.with_user(self.manager).unlink()
+        self.assertFalse(draft.payment_ids)
+        self.assertIn("removed", draft.message_ids[:1].body)
+        paid, _ = self._sync([self._line("unknown", uuid=str(uuid4()),
+                                         redsys_reference="ODOO-PAID0001", payment_ref_no="ODOO-PAID0001")])
+        pay = paid.payment_ids
+        self.assertEqual(paid.amount_paid, 10.0)
+        wiz = self.env["pos.payment.redsys.reconcile"].with_user(self.manager).create(
+            {"payment_ids": [(6, 0, pay.ids)], "resolution": "not_charged", "note": "Sin cargo"}
+        )
+        self.assertIn(paid.display_name, wiz.warning)
+        wiz.action_reconcile()
         self.assertEqual(pay.redsys_state, "not_charged")
         with self.assertRaises(UserError):
             pay.with_user(self.manager).unlink()
-        self.assertEqual(order.amount_paid, 10.0)
-        self.assertEqual(order.amount_total, 10.0)
+        self.assertEqual(paid.amount_paid, 10.0)
 
-    def test_qa2_known_issue_manager_reconcile_vs_stale_pos_copy_blocks_sync(self):
-        """NUEVO (MEDIO) QA2-09. Interacción QA-21 x D10 x sync: un manager concilia en el backend una línea
-        `unknown` de un pedido borrador que sigue abierto en un POS. La copia local del POS aún dice
-        `unknown`; su siguiente sync reenvía `redsys_state=unknown` y el servidor lo rechaza (la única
-        transición permitida es unknown -> otro), de modo que el pedido NO sincroniza hasta recargar.
-        Deseado: tratar como no-op el reenvío de un estado `unknown` sobre una línea ya resuelta (o
-        devolver el estado del servidor al POS sin error)."""
+    def test_qa2_09_stale_unknown_resend_after_manager_reconcile_is_a_noop(self):
+        """QA2-09. Tras conciliar un manager, el reenvío del `unknown` obsoleto desde un POS sin refrescar
+        NO bloquea la sincronización: es un no-op para los campos Redsys (los de UI sí se guardan) y el
+        servidor conserva el estado conciliado."""
         line = self._line("unknown")
         order, data = self._sync([line], draft=True)
         pay = order.payment_ids
         pay.with_user(self.manager).redsys_reconcile("charged", "Confirmado en el portal")
         self.assertEqual(pay.redsys_state, "authorized")
-        stale = dict(data, state="draft", payment_ids=[[1, pay.id, dict(line)]])
-        with self.assertRaises(UserError):
-            self.env["pos.order"].sync_from_ui([stale])
+        stale = dict(data, state="draft", payment_ids=[[1, pay.id, dict(line, card_no="1111")]])
+        self.env["pos.order"].sync_from_ui([stale])
+        self.assertEqual(pay.redsys_state, "authorized")
+        self.assertEqual(pay.card_no, "1111")
+        self.assertFalse(pay.transaction_id, "los campos Redsys no se tocan")
 
-    def test_qa2_known_issue_session_closes_silently_with_unknown_payments(self):
-        """NUEVO (ALTO) QA2-03 (sigue abierto el aviso de QA-21). La sesión se cierra con líneas `unknown`
-        sin aviso ni bloqueo: el cobro dudoso solo aparece si alguien abre el menú de conciliación.
-        Deseado: `close_session_from_ui`/`_cannot_close_session` avisa (o exige conciliar antes)."""
+    def test_qa2_03_session_cannot_close_with_unknown_payments(self):
+        """QA2-03. Con líneas `unknown` la sesión NO cierra: `close_session_from_ui` devuelve el aviso con
+        el listado (y redirige al backend); `action_pos_session_closing_control` (backend) lo rechaza.
+        Tras conciliar un manager, la sesión cierra."""
         order, _data = self._sync([self._line("unknown")])
         self.assertEqual(order.state, "paid")
         session = self.pos_session
+        res = session.close_session_from_ui()
+        self.assertFalse(res.get("successful"), res)
+        self.assertTrue(res.get("redirect"))
+        self.assertIn("ODOO-ABCD1234", res["message"])
+        self.assertIn(order.display_name, res["message"])
+        self.assertNotEqual(session.state, "closed")
+        with self.assertRaises(UserError):
+            session.action_pos_session_closing_control()
+        order.payment_ids.with_user(self.manager).redsys_reconcile("charged", "Confirmado en el portal")
         session.post_closing_cash_details(0)
         res = session.close_session_from_ui()
         self.assertTrue(res.get("successful"), res)
         self.assertEqual(session.state, "closed")
-        self.assertEqual(order.payment_ids.redsys_state, "unknown")
 
-    def test_qa2_known_issue_cashier_can_unlink_draft_order_with_authorized_payment(self):
-        """NUEVO (ALTO) QA2-10. `pos.order.unlink` (permitido a group_pos_user en borrador/cancelado) borra
-        en cascada de BD las líneas Redsys authorized/unknown saltándose D10 (límite ya admitido en
-        DECISIONS, pero alcanzable por un cajero con RPC normal). Deseado: pos.order no se borra si tiene
-        líneas con `redsys_state` protegido (ondelete en pos.order)."""
-        order, _data = self._sync([self._line("authorized")], draft=True)
-        pay = order.payment_ids
-        self.assertEqual(order.state, "draft")
-        order.with_user(self.cashier).unlink()
-        self.assertFalse(pay.exists(), "el cobro autorizado desapareció con el pedido")
+    def test_qa2_10_cashier_cannot_unlink_or_cancel_orders_with_card_payments(self):
+        """QA2-10 / QA2-01 (servidor). `pos.order.unlink` por RPC (cajero) y `action_pos_order_cancel`
+        (el «Cancel Orders» del cierre de sesión por `open_order_ids`) NO eliminan/cancelan un pedido con
+        cobros authorized/unknown; la cascada de BD no llega a ejecutarse. Sin cobros Redsys el core
+        funciona igual. El bypass de servidor (`su` + contexto) se conserva."""
+        for state in ("authorized", "unknown"):
+            order, _data = self._sync([self._line(state, uuid=str(uuid4()))], draft=True)
+            pay = order.payment_ids
+            with self.assertRaises(UserError):
+                order.with_user(self.cashier).unlink()
+            with self.assertRaises(UserError):
+                order.with_user(self.cashier).action_pos_order_cancel()
+            self.assertTrue(pay.exists())
+            self.assertEqual(order.state, "draft")
+            # un contexto enviado por RPC no es el bypass: hace falta sudo de servidor
+            with self.assertRaises(UserError):
+                order.with_user(self.cashier).with_context(redsys_force_unlink=True).unlink()
+            order.sudo().with_context(redsys_force_unlink=True).unlink()
+            self.assertFalse(pay.exists())
+        plain, _ = self._sync([self._cash()], draft=True)
+        plain.with_user(self.cashier).unlink()
+        self.assertFalse(plain.exists())
 
-    def test_qa2_known_issue_forged_refund_skips_uniqueness_and_link_checks(self):
-        """NUEVO (MEDIO) QA2-06. Una línea `refund` con `redsys_original_pedido` (cualquier valor) no pasa
-        por la unicidad pedido/RTS, no exige importe negativo ni que el original exista/tenga saldo.
-        Un cajero puede (a) registrar la MISMA devolución real en dos pedidos, o (b) reutilizar el XML de
-        un cobro ajeno como 'devolución' positiva. Deseado: refund => amount < 0, original authorized
-        en el mismo método con saldo suficiente, y unicidad también entre devoluciones."""
+    def test_qa2_06_refund_checks_in_the_server(self):
+        """QA2-06. Una `refund` con `redsys_original_pedido`: importe negativo, cobro original
+        `authorized` en el mismo método, sin repetir una devolución ya registrada y sin superar el
+        importe cobrado entre todas las devoluciones. Dos devoluciones parciales legítimas sí pasan."""
         charge, _ = self._sync([self._line("authorized", amount=10.0)], draft=True)
         pedido = charge.payment_ids.transaction_id
-        refund_vals = dict(amount=-10.0, xml=redsys_xml(-10.0), redsys_original_pedido=pedido)
-        first, _ = self._sync([self._line("refund", **refund_vals)], draft=True)
+
+        def refund(amount, ref, **kw):
+            return self._line("refund", amount=amount, xml=redsys_xml(amount, factura=ref),
+                              redsys_reference=ref, payment_ref_no=ref,
+                              redsys_original_pedido=kw.pop("original", pedido), **kw)
+
+        first, _ = self._sync([refund(-4.0, "ODOO-REFU0001")], draft=True)
         self.assertEqual(first.payment_ids.redsys_state, "refund")
-        # (a) la MISMA devolución (mismo pedido/RTS) registrada otra vez en otro pedido: aceptada
-        replay, _ = self._sync([self._line("refund", **refund_vals)], draft=True)
-        self.assertEqual(replay.payment_ids.redsys_state, "refund")
-        # (b) 'devolución' POSITIVA con el XML de un cobro y un original inventado: aceptada
-        forged, _ = self._sync(
-            [self._line("refund", amount=10.0, xml=redsys_xml(10.0), redsys_original_pedido="NO-EXISTE")],
-            draft=True,
+        second, _ = self._sync([refund(-6.0, "ODOO-REFU0002")], draft=True)
+        self.assertEqual(second.payment_ids.redsys_state, "refund")
+        for label, vals in (
+            ("misma devolución en otro pedido", refund(-4.0, "ODOO-REFU0001")),
+            ("supera el cobrado", refund(-1.0, "ODOO-REFU0003")),
+        ):
+            with self.subTest(label), self.assertRaises(ValidationError):
+                self._sync([vals], draft=True)
+        with self.subTest("positiva con original inventado"), self.assertRaises(ValidationError):
+            self._sync([self._line("refund", amount=10.0, xml=redsys_xml(10.0),
+                                   redsys_original_pedido="NO-EXISTE")], draft=True)
+        with self.subTest("original inexistente"), self.assertRaises(ValidationError):
+            self._sync([refund(-1.0, "ODOO-REFU0004", original="999999999999")], draft=True)
+
+    def test_qa2_17_unique_indexes_in_database(self):
+        """QA2-17. Índices únicos parciales (método, pedido) y (método, RTS) para cobros `authorized`:
+        aunque la comprobación Python se saltase (concurrencia), la BD rechaza el duplicado."""
+        self.env.cr.execute(
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'pos_payment' AND indexname LIKE 'pos_payment_redsys_%_uniq'"
         )
-        self.assertEqual(forged.payment_ids.redsys_state, "refund")
-        self.assertEqual(forged.payment_ids.amount, 10.0)
+        self.assertEqual(len(self.env.cr.fetchall()), 2)
+        one, _ = self._sync([self._line("authorized", uuid=str(uuid4()))], draft=True)
+        other, _ = self._sync([self._line("unknown", uuid=str(uuid4()),
+                                          redsys_reference="ODOO-OTHER001", payment_ref_no="ODOO-OTHER001")], draft=True)
+        with self.assertRaises(IntegrityError), mute_logger("odoo.sql_db"), self.env.cr.savepoint():
+            self.env.cr.execute(
+                "UPDATE pos_payment SET redsys_state='authorized', transaction_id=%s WHERE id=%s",
+                (one.payment_ids.transaction_id, other.payment_ids.id),
+            )
 
     def test_qa2_server_cannot_tell_a_forged_xml_from_a_real_one(self):
         """Límite conocido (DECISIONS QA-20, no se verifica la firma): el XML lo aporta el cliente y basta
