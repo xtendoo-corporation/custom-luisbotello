@@ -291,9 +291,15 @@ class PosPayment(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        for vals in vals_list:
-            if REDSYS_RESOLUTION_FIELDS & vals.keys() and not self.env.su:
-                raise UserError(_("Reconciliation data can only be set by the reconcile action."))
+        if not self.env.su:
+            # El POS reenvía los campos de conciliación vacíos (se cargan al POS, D11): se descartan;
+            # cualquier valor real solo puede venir de `redsys_reconcile`.
+            cleaned = []
+            for vals in vals_list:
+                if any(vals.get(key) for key in REDSYS_RESOLUTION_FIELDS):
+                    raise UserError(_("Reconciliation data can only be set by the reconcile action."))
+                cleaned.append({k: v for k, v in vals.items() if k not in REDSYS_RESOLUTION_FIELDS})
+            vals_list = cleaned
         if not self.env.su and any(v.get("redsys_state") == "not_charged" for v in vals_list):
             raise UserError(_("Use the reconcile action to resolve unknown payments."))
         try:
@@ -384,8 +390,13 @@ class PosPayment(models.Model):
                     stale.write(clean)
                 rest = self - stale
                 return rest.write(vals) if rest else True
-        if REDSYS_RESOLUTION_FIELDS & vals.keys() and not self.env.su:
-            raise UserError(_("Reconciliation data can only be set by the reconcile action."))
+        if not self.env.su:
+            # Reenviar el valor actual (el POS manda los campos de conciliación sin cambios) es un no-op;
+            # un cambio real, incluido vaciar una nota existente, solo lo hace `redsys_reconcile`.
+            for key in REDSYS_RESOLUTION_FIELDS & vals.keys():
+                if not all(self._redsys_value_equals(pay, key, vals[key]) for pay in self):
+                    raise UserError(_("Reconciliation data can only be set by the reconcile action."))
+            vals = {k: v for k, v in vals.items() if k not in REDSYS_RESOLUTION_FIELDS}
         if vals.get("redsys_state") == "not_charged" and not self.env.su:
             raise UserError(_("Use the reconcile action to resolve unknown payments."))
         forbidden, changed = self._redsys_changed_locked(vals)

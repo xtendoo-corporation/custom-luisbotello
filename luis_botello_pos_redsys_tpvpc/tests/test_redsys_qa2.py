@@ -107,6 +107,40 @@ class TestRedsysQA2(TestPoSCommon):
         self.assertEqual(pay.card_no, "0018")
         self.assertEqual(pay.redsys_state, "authorized")
 
+    def test_qa2_real_pos_payload_with_empty_resolution_fields(self):
+        """El POS carga todos los campos de `pos.payment` (D11) y reenvía los de conciliación vacíos al
+        sincronizar: un cajero (sin sudo) debe poder crear y reenviar la línea sin que salte el guard."""
+        empty = {"redsys_resolution_note": False, "redsys_resolved_by_id": False, "redsys_resolved_date": False}
+        order, _data = self._sync([], draft=True)
+        line = self._line("authorized", pos_order_id=order.id, **empty)
+        line.pop("uuid")
+        pay = self.env["pos.payment"].with_user(self.cashier).create(line)
+        self.assertEqual(pay.redsys_state, "authorized")
+        self.assertFalse(pay.redsys_resolution_note)
+        # reenvío de la misma línea con los campos de conciliación vacíos (update de la línea existente)
+        pay.write({**empty, "card_no": "0018"})
+        self.assertEqual(pay.card_no, "0018")
+
+    def test_qa2_cashier_cannot_clear_or_forge_resolution_fields(self):
+        """Descartar los vacíos no abre un hueco: un valor real o vaciar una nota existente siguen prohibidos."""
+        order, _data = self._sync([self._line("unknown")], draft=True)
+        pay = order.payment_ids
+        pay.with_user(self.manager).redsys_reconcile("charged", "Portal OK")
+        self.assertEqual(pay.redsys_resolution_note, "Portal OK")
+        as_cashier = pay.with_user(self.cashier)
+        for vals in (
+            {"redsys_resolution_note": False},
+            {"redsys_resolution_note": "otra"},
+            {"redsys_resolved_by_id": self.cashier.id},
+            {"redsys_resolved_date": False},
+        ):
+            with self.subTest(vals=vals), self.assertRaises(UserError):
+                as_cashier.write(vals)
+        # reenviar el valor actual es un no-op
+        as_cashier.write({"redsys_resolution_note": "Portal OK", "card_no": "1111"})
+        self.assertEqual(pay.redsys_resolution_note, "Portal OK")
+        self.assertEqual(pay.card_no, "1111")
+
     def test_qa2_real_sync_unknown_resolved_by_recovery_query_xml(self):
         """Flujo de recarga: línea unknown sincronizada en borrador y resuelta después con el XML de la
         CONSULTA (J11). Un XML con otro importe se rechaza y deja la línea unknown."""
