@@ -10,3 +10,9 @@ venv/
 .env
 .idea/
 .vscode/
+
+# Redsys TPV-PC: binarios y secretos
+*.msi
+*.dll
+*credentials*
+diagnostic_kit/*.local.*

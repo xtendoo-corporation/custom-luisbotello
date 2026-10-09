@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="pos_payment_view_search_inherit_redsys_tpvpc" model="ir.ui.view">
+        <field name="name">pos.payment.search.inherit.redsys.tpvpc</field>
+        <field name="model">pos.payment</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_payment_search" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='pos_order_id']" position="after">
+                <field name="redsys_reference" />
+                <field name="transaction_id" />
+                <filter
+          name="redsys_unknown"
+          string="Redsys unknown (to reconcile)"
+          domain="[('redsys_state', '=', 'unknown')]"
+        />
+                <filter
+          name="redsys_reconciled"
+          string="Redsys reconciled"
+          domain="[('redsys_resolved_by_id', '!=', False)]"
+        />
+                <separator />
+            </xpath>
+        </field>
+    </record>
+
+    <record id="pos_payment_view_list_redsys_tpvpc" model="ir.ui.view">
+        <field name="name">pos.payment.list.redsys.tpvpc</field>
+        <field name="model">pos.payment</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_payment_tree" />
+        <field name="mode">primary</field>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='amount']" position="after">
+                <field name="redsys_reference" />
+                <field name="redsys_state" />
+                <field name="redsys_resolved_by_id" optional="show" />
+                <field name="redsys_resolution_note" optional="hide" />
+            </xpath>
+        </field>
+    </record>
+
+    <record id="pos_payment_view_form_inherit_redsys_tpvpc" model="ir.ui.view">
+        <field name="name">pos.payment.form.inherit.redsys.tpvpc</field>
+        <field name="model">pos.payment</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_payment_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='transaction_id']" position="after">
+                <field name="redsys_state" invisible="not redsys_state" />
+                <field name="redsys_reference" invisible="not redsys_reference" />
+                <field name="redsys_rts" invisible="not redsys_rts" />
+                <field
+          name="redsys_resolved_by_id"
+          invisible="not redsys_resolved_by_id"
+        />
+                <field
+          name="redsys_resolved_date"
+          invisible="not redsys_resolved_date"
+        />
+                <field
+          name="redsys_resolution_note"
+          invisible="not redsys_resolution_note"
+        />
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_pos_payment_redsys_unknown" model="ir.actions.act_window">
+        <field name="name">Redsys payments to reconcile</field>
+        <field name="res_model">pos.payment</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="pos_payment_view_list_redsys_tpvpc" />
+        <field name="domain">[]</field>
+        <field name="context">{'search_default_redsys_unknown': 1}</field>
+        <field name="search_view_id" ref="point_of_sale.view_pos_payment_search" />
+    </record>
+
+    <menuitem
+    id="menu_pos_payment_redsys_unknown"
+    parent="point_of_sale.menu_point_of_sale"
+    action="action_pos_payment_redsys_unknown"
+    sequence="4"
+    groups="point_of_sale.group_pos_manager"
+  />
+
+    <record id="pos_payment_redsys_reconcile_view_form" model="ir.ui.view">
+        <field name="name">pos.payment.redsys.reconcile.form</field>
+        <field name="model">pos.payment.redsys.reconcile</field>
+        <field name="arch" type="xml">
+            <form string="Reconcile Redsys payments">
+                <div class="alert alert-warning" role="alert" invisible="not warning">
+                    <field name="warning" nolabel="1" />
+                </div>
+                <group>
+                    <field
+            name="payment_ids"
+            widget="many2many_tags"
+            options="{'no_create': True}"
+          />
+                    <field name="resolution" widget="radio" />
+                    <field
+            name="note"
+            placeholder="Redsys portal operation checked, date, who checked it..."
+          />
+                </group>
+                <footer>
+                    <button
+            name="action_reconcile"
+            string="Reconcile"
+            type="object"
+            class="btn-primary"
+            data-hotkey="q"
+          />
+                    <button string="Cancel" special="cancel" data-hotkey="x" />
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_payment_redsys_reconcile" model="ir.actions.act_window">
+        <field name="name">Reconcile Redsys payments</field>
+        <field name="res_model">pos.payment.redsys.reconcile</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" ref="point_of_sale.model_pos_payment" />
+        <field name="binding_view_types">list,form</field>
+        <field name="group_ids" eval="[(4, ref('point_of_sale.group_pos_manager'))]" />
+    </record>
+
+    <record id="pos_order_redsys_cancel_view_form" model="ir.ui.view">
+        <field name="name">pos.order.redsys.cancel.form</field>
+        <field name="model">pos.order.redsys.cancel</field>
+        <field name="arch" type="xml">
+            <form string="Cancel order with Redsys payments">
+                <div class="alert alert-warning" role="alert">
+                    The order has card payments made through Redsys. Cancelling does not refund the card:
+                    refund it first in the Redsys portal or on the terminal and enter the reference here.
+                    The payment lines stay in the cancelled order as a record.
+                </div>
+                <group>
+                    <field name="order_id" />
+                    <field name="payment_info" />
+                    <field name="refund_reference" />
+                    <field name="note" />
+                </group>
+                <footer>
+                    <button
+            name="action_cancel_order"
+            string="Cancel order"
+            type="object"
+            class="btn-primary"
+            data-hotkey="q"
+          />
+                    <button string="Close" special="cancel" data-hotkey="x" />
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_order_redsys_cancel" model="ir.actions.act_window">
+        <field name="name">Cancel order with Redsys payments</field>
+        <field name="res_model">pos.order.redsys.cancel</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="pos_order_view_form_inherit_redsys_tpvpc" model="ir.ui.view">
+        <field name="name">pos.order.form.inherit.redsys.tpvpc</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button
+          name="%(action_pos_order_redsys_cancel)d"
+          string="Cancel (Redsys refund registered)"
+          type="action"
+          groups="point_of_sale.group_pos_manager"
+          invisible="state != 'draft'"
+        />
+            </xpath>
+        </field>
+    </record>
+</odoo>

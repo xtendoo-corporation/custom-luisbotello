@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="pos_payment_method_view_form_inherit_redsys_tpvpc" model="ir.ui.view">
+        <field name="name">pos.payment.method.form.inherit.redsys.tpvpc</field>
+        <field name="model">pos.payment.method</field>
+        <field name="inherit_id" ref="point_of_sale.pos_payment_method_view_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='use_payment_terminal']" position="after">
+                <field
+          name="redsys_merchant_code"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+          required="use_payment_terminal == 'redsys_tpvpc'"
+        />
+                <field
+          name="redsys_terminal_number"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+          required="use_payment_terminal == 'redsys_tpvpc'"
+        />
+                <field
+          name="redsys_signature_key"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+          required="use_payment_terminal == 'redsys_tpvpc'"
+          password="True"
+        />
+                <field
+          name="redsys_com_port"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+        />
+                <field
+          name="redsys_protocol_version"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+        />
+                <field
+          name="redsys_transport"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+        />
+                <field
+          name="redsys_simulation"
+          invisible="use_payment_terminal != 'redsys_tpvpc'"
+          groups="point_of_sale.group_pos_manager"
+        />
+            </xpath>
+        </field>
+    </record>
+</odoo>

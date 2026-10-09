@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="luis_botello_pos_redsys_tpvpc.RedsysStatus">
+        <t t-foreach="items" t-as="item" t-key="item.method.id">
+            <button
+        class="redsys-tpvpc-status btn btn-light btn-lg lh-lg"
+        t-att-title="item.text"
+        t-att-aria-label="item.text"
+        t-on-click="() => this.onClick(item.method)"
+      >
+                <i t-attf-class="fa fa-fw fa-credit-card {{ item.cls }}" role="img" />
+            </button>
+        </t>
+    </t>
+
+    <t t-inherit="point_of_sale.Navbar" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('status-buttons')]/*[1]" position="before">
+            <RedsysStatus />
+        </xpath>
+    </t>
+
+</templates>
