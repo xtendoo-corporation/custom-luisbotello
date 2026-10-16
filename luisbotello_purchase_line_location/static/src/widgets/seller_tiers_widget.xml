@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="luisbotello_purchase_line_location.SellerTiers">
+        <span class="text-nowrap">
+            <a tabindex="0" class="fa fa-percent cursor-pointer me-1"
+               title="Vendor discounts by quantity"
+               t-att-class="!data ? 'invisible' : ''"
+               t-on-click="(ev) => this.show(ev, 'discounts')"/>
+            <a tabindex="0" class="fa fa-sort-amount-asc cursor-pointer"
+               title="Minimum quantity"
+               t-att-class="!data ? 'invisible' : ''"
+               t-on-click="(ev) => this.show(ev, 'min_qty')"/>
+        </span>
+    </t>
+
+    <t t-name="luisbotello_purchase_line_location.SellerTiersPopover">
+        <div class="p-2">
+            <t t-if="props.mode === 'discounts'">
+                <h6>Vendor discounts by quantity</h6>
+                <table class="table table-sm mb-1">
+                    <thead>
+                        <tr>
+                            <th>Min. qty</th>
+                            <th class="text-end">Price</th>
+                            <th class="text-end">Discount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr t-foreach="props.data.tiers" t-as="tier" t-key="tier_index"
+                            t-att-class="tier.current ? 'fw-bold text-success' : ''">
+                            <td><t t-out="tier.min_qty"/> <t t-out="tier.uom"/></td>
+                            <td class="text-end"><t t-out="tier.price.toFixed(2)"/> <t t-out="tier.currency"/></td>
+                            <td class="text-end"><t t-out="tier.discount"/>%</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <small class="text-muted">
+                    <span>Total ordered of this product:</span> <b t-out="props.data.total_qty"/>
+                </small>
+            </t>
+            <t t-else="">
+                <h6>Minimum quantity</h6>
+                <p class="mb-1">
+                    <span>Vendor minimum:</span> <b t-out="props.data.min_qty"/> <t t-out="props.data.uom"/>
+                </p>
+                <p class="mb-1">
+                    <span>Total ordered of this product:</span> <b t-out="props.data.total_qty"/> <t t-out="props.data.uom"/>
+                </p>
+                <p t-if="props.data.next" class="mb-0 text-info" t-out="nextMessage"/>
+                <p t-else="" class="mb-0 text-success">Best discount tier reached.</p>
+            </t>
+        </div>
+    </t>
+
+</templates>

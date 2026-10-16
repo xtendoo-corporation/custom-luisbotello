@@ -31,7 +31,7 @@ class PurchaseOrderLine(models.Model):
             self.tax_ids,
             self.company_id,
         )
-        self.discount = 0.0
+        self.discount = self.selected_seller_id.discount or 0.0
         self._reset_price_unit(
             product.cost_currency_id._convert(
                 price_unit,
