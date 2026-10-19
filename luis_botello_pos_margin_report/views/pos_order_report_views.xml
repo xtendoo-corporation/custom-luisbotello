@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_luis_botello_report_pos_order_margin_pivot" model="ir.ui.view">
+        <field name="name">luis.botello.report.pos.order.margin.pivot</field>
+        <field name="model">report.pos.order</field>
+        <field name="arch" type="xml">
+            <pivot string="Beneficio por periodo" sample="1">
+                <field name="date" interval="month" type="row"/>
+                <field name="price_subtotal_excl" type="measure" string="Ventas sin impuestos"/>
+                <field name="margin" type="measure" string="Beneficio"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_luis_botello_report_pos_order_margin_graph" model="ir.ui.view">
+        <field name="name">luis.botello.report.pos.order.margin.graph</field>
+        <field name="model">report.pos.order</field>
+        <field name="arch" type="xml">
+            <graph string="Beneficio por periodo" type="bar" sample="1">
+                <field name="date" interval="month"/>
+                <field name="margin" type="measure" string="Beneficio"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_luis_botello_report_pos_order_margin_list" model="ir.ui.view">
+        <field name="name">luis.botello.report.pos.order.margin.list</field>
+        <field name="model">report.pos.order</field>
+        <field name="arch" type="xml">
+            <list string="Beneficio por periodo" create="false" edit="false">
+                <field name="date"/>
+                <field name="order_id" optional="show"/>
+                <field name="product_id" optional="show"/>
+                <field name="product_qty" optional="show" sum="Cantidad"/>
+                <field name="price_subtotal_excl" optional="show" sum="Ventas sin impuestos"/>
+                <field name="margin" optional="show" sum="Beneficio"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Añade el beneficio a las medidas habituales del análisis estándar -->
+    <record id="view_luis_botello_report_pos_order_pivot_inherit" model="ir.ui.view">
+        <field name="name">luis.botello.report.pos.order.pivot.inherit</field>
+        <field name="model">report.pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_report_pos_order_pivot"/>
+        <field name="arch" type="xml">
+            <field name="price_total" position="after">
+                <field name="margin" type="measure"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="action_luis_botello_pos_margin_report" model="ir.actions.act_window">
+        <field name="name">Beneficio por periodo</field>
+        <field name="res_model">report.pos.order</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'pivot', 'view_id': ref('view_luis_botello_report_pos_order_margin_pivot')}),
+            (0, 0, {'view_mode': 'graph', 'view_id': ref('view_luis_botello_report_pos_order_margin_graph')}),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_luis_botello_report_pos_order_margin_list')})]"/>
+        <field name="search_view_id" ref="point_of_sale.view_report_pos_order_search"/>
+        <field name="context">{'search_default_not_cancelled': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Aún no hay pedidos TPV para analizar.</p>
+            <p>Beneficio = ventas sin impuestos - coste de los productos vendidos. Cambia el periodo
+            (día, semana, mes, año) desde el desplegable de la cabecera de columnas/filas.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_luis_botello_pos_margin_report"
+        name="Beneficio por periodo"
+        parent="point_of_sale.menu_point_rep"
+        action="action_luis_botello_pos_margin_report"
+        sequence="5"
+        groups="point_of_sale.group_pos_manager"/>
+</odoo>
