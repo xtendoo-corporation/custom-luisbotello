@@ -39,6 +39,12 @@ class SeasonalityWizard(models.TransientModel):
     # ------------------------------------------------------------------
     # Sin líneas a cero
     # ------------------------------------------------------------------
+    def _compute_demand(self, products, months):
+        """El asistente lee ventas de venta y TPV. Un responsable de inventario
+        no tiene por qué tener acceso a esos modelos, así que el cálculo (solo
+        lectura, filtrado por compañía y almacén) se hace con sudo."""
+        return super(SeasonalityWizard, self.sudo())._compute_demand(products, months)
+
     def _get_products(self):
         """Con «Ocultar sin demanda» solo se analizan los productos que
         vendieron algo en los meses elegidos."""

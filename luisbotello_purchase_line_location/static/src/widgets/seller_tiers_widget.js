@@ -15,7 +15,7 @@ export class SellerTiersPopover extends Component {
 
     get nextMessage() {
         const next = this.props.data.next;
-        return sprintf(_t("Add %(missing)s more to reach %(min)s (%(discount)s%% discount)."), {
+        return sprintf(_t("Add %(missing)s more to reach %(min)s (%(discount)s% discount)."), {
             missing: next.missing,
             min: next.min_qty,
             discount: next.discount,

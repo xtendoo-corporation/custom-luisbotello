@@ -35,3 +35,16 @@ class TestOrderpointRounding(TransactionCase):
         wizard.hide_zero_demand = False
         wizard.action_compute_preview()
         self.assertEqual(len(wizard.line_ids), 12)
+
+    def test_demand_readable_without_sales_access(self):
+        """Un responsable de inventario sin permisos de ventas/TPV puede calcular la demanda."""
+        user = self.env['res.users'].create({
+            'name': 'Solo inventario', 'login': 'solo_inventario_test',
+            'group_ids': [(6, 0, [self.env.ref('stock.group_stock_manager').id])],
+        })
+        warehouse = self.env['stock.warehouse'].search([('company_id', '=', user.company_id.id)], limit=1)
+        wizard = self.env['stock.orderpoint.seasonality.wizard'].with_user(user).create({
+            'warehouse_id': warehouse.id, 'company_id': user.company_id.id,
+        })
+        product = self.env['product.product'].create({'name': 'Prod demanda', 'is_storable': True})
+        self.assertEqual(wizard._compute_demand(product, [1, 2]), {})

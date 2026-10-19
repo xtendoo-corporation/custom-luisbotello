@@ -88,5 +88,5 @@ msgstr "Se ha alcanzado el mejor tramo de descuento."
 #. module: luisbotello_purchase_line_location
 #. odoo-javascript
 #: code:addons/luisbotello_purchase_line_location/static/src/widgets/seller_tiers_widget.js:0
-msgid "Add %(missing)s more to reach %(min)s (%(discount)s%% discount)."
-msgstr "Añade %(missing)s más para llegar a %(min)s (%(discount)s%% de descuento)."
+msgid "Add %(missing)s more to reach %(min)s (%(discount)s% discount)."
+msgstr "Añade %(missing)s más para llegar a %(min)s (%(discount)s% de descuento)."
