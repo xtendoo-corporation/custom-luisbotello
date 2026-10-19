@@ -49,30 +49,27 @@
                 <field name="partner_id"/>
                 <field name="order_id"/>
                 <filter name="filter_today" string="Hoy"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0,0,0)))]"/>
                 <filter name="filter_yesterday" string="Ayer"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=1), datetime.time.min)),
-                             ('date', '&lt;', datetime.datetime.combine(context_today(), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=1), datetime.time(0,0,0))), ('date', '&lt;', datetime.datetime.combine(context_today(), datetime.time(0,0,0)))]"/>
                 <separator/>
                 <filter name="filter_last_7_days" string="Últimos 7 días"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=6), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=6), datetime.time(0,0,0)))]"/>
                 <filter name="filter_last_30_days" string="Últimos 30 días"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=29), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=29), datetime.time(0,0,0)))]"/>
                 <filter name="filter_last_90_days" string="Últimos 90 días"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=89), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=89), datetime.time(0,0,0)))]"/>
                 <separator/>
                 <filter name="filter_this_week" string="Esta semana"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=context_today().weekday()), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() + relativedelta(days=-6, weekday=0), datetime.time(0,0,0)))]"/>
                 <filter name="filter_last_week" string="Semana pasada"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=context_today().weekday() + 7), datetime.time.min)),
-                             ('date', '&lt;', datetime.datetime.combine(context_today() - relativedelta(days=context_today().weekday()), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() + relativedelta(days=-13, weekday=0), datetime.time(0,0,0))), ('date', '&lt;', datetime.datetime.combine(context_today() + relativedelta(days=-6, weekday=0), datetime.time(0,0,0)))]"/>
                 <filter name="filter_this_month" string="Este mes"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today().replace(day=1), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() + relativedelta(day=1), datetime.time(0,0,0)))]"/>
                 <filter name="filter_last_month" string="Mes pasado"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today().replace(day=1) - relativedelta(months=1), datetime.time.min)),
-                             ('date', '&lt;', datetime.datetime.combine(context_today().replace(day=1), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() + relativedelta(day=1, months=-1), datetime.time(0,0,0))), ('date', '&lt;', datetime.datetime.combine(context_today() + relativedelta(day=1), datetime.time(0,0,0)))]"/>
                 <filter name="filter_this_year" string="Este año"
-                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today().replace(month=1, day=1), datetime.time.min))]"/>
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() + relativedelta(month=1, day=1), datetime.time(0,0,0)))]"/>
                 <separator/>
                 <filter name="filter_date" string="Fecha personalizada" date="date"/>
                 <separator/>
