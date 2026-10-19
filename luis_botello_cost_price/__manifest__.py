@@ -5,7 +5,7 @@
     'summary': 'Precio de coste de la ficha como precio por defecto en las líneas de compra',
     'author': 'Xtendoo',
     'license': 'LGPL-3',
-    'depends': ['purchase'],
+    'depends': ['purchase_stock'],
     'data': [],
     'installable': True,
     'application': False,

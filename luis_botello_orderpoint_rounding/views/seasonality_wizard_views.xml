@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="xtendoo_stock_orderpoint_period.action_seasonality_wizard" model="ir.actions.act_window">
+        <field name="name">Mínimos de stock estacionales</field>
+        <field name="context">{'dialog_size': 'extra-large'}</field>
+    </record>
+
+    <record id="xtendoo_stock_orderpoint_period.menu_seasonality_wizard" model="ir.ui.menu">
+        <field name="name">Mínimos de stock estacionales</field>
+    </record>
+
+    <record id="view_seasonality_wizard_form_improved" model="ir.ui.view">
+        <field name="name">stock.orderpoint.seasonality.wizard.form.improved</field>
+        <field name="model">stock.orderpoint.seasonality.wizard</field>
+        <field name="inherit_id" ref="xtendoo_stock_orderpoint_period.view_seasonality_wizard_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="attributes">
+                <attribute name="string">Mínimos de stock estacionales</attribute>
+            </xpath>
+            <xpath expr="//form/group" position="before">
+                <div class="alert alert-info" role="alert" invisible="not simulation">
+                    <strong>Modo simulación:</strong> solo se muestra la vista previa. Desmarca
+                    «Simulación» para poder aplicar los cambios.
+                </div>
+            </xpath>
+            <xpath expr="//field[@name='simulation']" position="before">
+                <field name="hide_zero_demand"/>
+            </xpath>
+            <xpath expr="//page[@name='page_preview']" position="attributes">
+                <attribute name="string">Vista previa</attribute>
+            </xpath>
+            <xpath expr="//field[@name='line_ids']" position="replace">
+                <div class="d-flex flex-wrap gap-4 mb-2" invisible="not line_count">
+                    <span><strong><field name="line_count" class="oe_inline"/></strong> líneas</span>
+                    <span class="text-success"><strong><field name="create_count" class="oe_inline"/></strong> a crear</span>
+                    <span class="text-info"><strong><field name="update_count" class="oe_inline"/></strong> a actualizar</span>
+                    <span class="text-danger"><strong><field name="conflict_count" class="oe_inline"/></strong> en conflicto (se omiten)</span>
+                </div>
+                <field name="line_ids" nolabel="1">
+                    <list create="false" delete="false" edit="false" default_order="product_id, month"
+                          decoration-danger="action_flag == 'conflict'">
+                        <field name="product_id" string="Producto" widget="many2one" options="{'no_open': True}"/>
+                        <field name="month_name" string="Mes"/>
+                        <field name="demand_qty" string="Ventas año ref."/>
+                        <field name="suggested_min_qty" string="Mínimo"/>
+                        <field name="suggested_max_qty" string="Máximo"/>
+                        <field name="date_start" string="Desde"/>
+                        <field name="date_end" string="Hasta"/>
+                        <field name="action_flag" string="Acción" widget="badge"
+                               decoration-success="action_flag == 'create'"
+                               decoration-info="action_flag == 'update'"
+                               decoration-danger="action_flag == 'conflict'"/>
+                        <field name="factor_pct" string="Factor (%)" optional="hide"/>
+                        <field name="existing_orderpoint_id" string="Regla existente" optional="hide"/>
+                    </list>
+                </field>
+            </xpath>
+            <xpath expr="//button[@name='action_apply']" position="attributes">
+                <attribute name="invisible">simulation or not line_count</attribute>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

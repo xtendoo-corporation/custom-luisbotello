@@ -29,7 +29,14 @@ class TestPurchaseCostPrice(BaseCommon):
     def test_cost_price_instead_of_vendor_price(self):
         line = self._new_line()
         self.assertEqual(line.price_unit, 12.0)
-        self.assertEqual(line.discount, 0.0)
+        # el descuento sigue siendo el del tramo del proveedor
+        self.assertEqual(line.discount, 10.0)
+
+    def test_cost_price_rounded_to_currency(self):
+        self.product.standard_price = 8.123456
+        self.assertEqual(self._new_line().price_unit, 8.12)
+        self.product.standard_price = 8.126
+        self.assertEqual(self._new_line().price_unit, 8.13)
 
     def test_cost_price_follows_cost_change(self):
         self.product.standard_price = 15.0
@@ -51,3 +58,24 @@ class TestPurchaseCostPrice(BaseCommon):
             'name': 'Sin proveedor', 'standard_price': 7.0,
         })
         self.assertEqual(self._new_line(product).price_unit, 7.0)
+
+    def test_procurement_line_uses_cost_price(self):
+        """Las compras del planificador también usan el coste de la ficha."""
+        self.product.write({'is_storable': True, 'standard_price': 8.123456})
+        self.product.seller_ids.write({'price': 8.0})
+        buy = self.env['stock.route'].search([('rule_ids.action', '=', 'buy')], limit=1)
+        self.product.route_ids = [(4, buy.id)]
+        warehouse = self.env['stock.warehouse'].search([('company_id', '=', self.env.company.id)], limit=1)
+        orderpoint = self.env['stock.warehouse.orderpoint'].create({
+            'product_id': self.product.id,
+            'warehouse_id': warehouse.id,
+            'location_id': warehouse.lot_stock_id.id,
+            'product_min_qty': 5,
+            'product_max_qty': 20,
+            'trigger': 'auto',
+        })
+        orderpoint._procure_orderpoint_confirm()
+        line = self.env['purchase.order.line'].search([('orderpoint_id', '=', orderpoint.id)])
+        self.assertTrue(line)
+        self.assertEqual(line.price_unit, 8.12)
+        self.assertEqual(line.discount, 10.0)

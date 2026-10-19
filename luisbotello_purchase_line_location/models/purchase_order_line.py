@@ -120,6 +120,28 @@ class PurchaseOrderLine(models.Model):
         return lines
 
     # ------------------------------------------------------------------
+    # Líneas generadas por reabastecimiento (planificador / reglas de stock)
+    # ------------------------------------------------------------------
+    @api.model
+    def _prepare_purchase_order_line_from_procurement(
+            self, product_id, product_qty, product_uom, location_dest_id, name, origin,
+            company_id, values, po):
+        res = super()._prepare_purchase_order_line_from_procurement(
+            product_id, product_qty, product_uom, location_dest_id, name, origin,
+            company_id, values, po)
+        if location_dest_id and location_dest_id.usage == 'internal':
+            res['dest_location_id'] = location_dest_id.id
+        return res
+
+    def _find_candidate(self, product_id, product_qty, product_uom, location_id, *args, **kwargs):
+        # No fusionar necesidades de ubicaciones distintas en una misma línea
+        lines = self.filtered(
+            lambda l: not l.dest_location_id or not location_id or l.dest_location_id == location_id
+        )
+        return super(PurchaseOrderLine, lines)._find_candidate(
+            product_id, product_qty, product_uom, location_id, *args, **kwargs)
+
+    # ------------------------------------------------------------------
     # Movimientos de stock
     # ------------------------------------------------------------------
     def _prepare_stock_move_vals(self, picking, price_unit, product_uom_qty, product_uom):

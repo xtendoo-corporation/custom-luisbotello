@@ -56,3 +56,24 @@ class TestPurchaseLineLocation(TransactionCase):
             {m.purchase_line_id.dest_location_id: m.location_dest_id for m in moves},
             {self.loc_a: self.loc_a, self.loc_b: self.loc_b},
         )
+
+    def test_replenishment_sets_destination_location(self):
+        """El planificador crea líneas con la ubicación de la regla y no
+        mezcla ubicaciones distintas en una misma línea."""
+        buy = self.env['stock.route'].search([('rule_ids.action', '=', 'buy')], limit=1)
+        self.product.route_ids = [(4, buy.id)]
+        warehouse = self.loc_a.warehouse_id
+        orderpoints = self.env['stock.warehouse.orderpoint']
+        for loc in (self.loc_a, self.loc_b):
+            orderpoints |= orderpoints.create({
+                'product_id': self.product.id,
+                'warehouse_id': warehouse.id,
+                'location_id': loc.id,
+                'product_min_qty': 5,
+                'product_max_qty': 20,
+                'trigger': 'auto',
+            })
+        orderpoints._procure_orderpoint_confirm()
+        lines = self.env['purchase.order.line'].search([('product_id', '=', self.product.id)])
+        self.assertEqual(set(lines.mapped('dest_location_id')), {self.loc_a, self.loc_b})
+        self.assertEqual(len(lines), 2)

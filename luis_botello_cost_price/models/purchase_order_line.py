@@ -23,21 +23,43 @@ class PurchaseOrderLine(models.Model):
     def _apply_product_cost_price(self):
         """Sustituye el precio de la tarifa de proveedor por el coste de la ficha."""
         self.ensure_one()
-        product = self.product_id
-        po_line_uom = self.product_uom_id or product.uom_id
-        price_unit = self.env['account.tax']._fix_tax_included_price_company(
-            product.uom_id._compute_price(product.standard_price, po_line_uom),
-            product.supplier_taxes_id,
+        self.discount = self.selected_seller_id.discount or 0.0
+        self._reset_price_unit(self._get_product_cost_price(
+            self.product_id,
+            self.product_uom_id,
+            self.product_id.supplier_taxes_id,
             self.tax_ids,
             self.company_id,
+            self.currency_id,
+            self.date_order or fields.Date.context_today(self),
+        ))
+
+    @api.model
+    def _get_product_cost_price(self, product, uom, product_taxes, taxes, company, currency, date):
+        """Coste de la ficha en la UdM y moneda de la línea, redondeado a los
+        decimales de la moneda (el coste medio puede traer muchos más)."""
+        price_unit = self.env['account.tax']._fix_tax_included_price_company(
+            product.uom_id._compute_price(product.standard_price, uom or product.uom_id),
+            product_taxes,
+            taxes,
+            company,
         )
-        self.discount = self.selected_seller_id.discount or 0.0
-        self._reset_price_unit(
-            product.cost_currency_id._convert(
-                price_unit,
-                self.currency_id,
-                self.company_id,
-                self.date_order or fields.Date.context_today(self),
-                False,
-            )
-        )
+        price_unit = product.cost_currency_id._convert(price_unit, currency, company, date, False)
+        return currency.round(price_unit)
+
+    def _prepare_purchase_order_line_from_procurement(
+            self, product_id, product_qty, product_uom, location_dest_id, name, origin,
+            company_id, values, po):
+        """Líneas creadas por el planificador: también con el coste de la ficha."""
+        res = super()._prepare_purchase_order_line_from_procurement(
+            product_id, product_qty, product_uom, location_dest_id, name, origin,
+            company_id, values, po)
+        if res.get('price_unit') and values.get('supplier'):
+            uom = self.env['uom.uom'].browse(res['product_uom_id'])
+            product_taxes = product_id.supplier_taxes_id.filtered_domain(
+                self.env['account.tax']._check_company_domain(company_id))
+            taxes = self.env['account.tax'].browse(res['tax_ids'][0][2]) if res.get('tax_ids') else product_taxes
+            res['price_unit'] = self._get_product_cost_price(
+                product_id, uom, product_taxes, taxes, company_id, po.currency_id,
+                po.date_order or fields.Date.context_today(self))
+        return res
