@@ -5,7 +5,7 @@
         <field name="model">report.pos.order</field>
         <field name="arch" type="xml">
             <pivot string="Beneficio por periodo" sample="1">
-                <field name="date" interval="month" type="row"/>
+                <field name="date" interval="day" type="row"/>
                 <field name="price_subtotal_excl" type="measure" string="Ventas sin impuestos"/>
                 <field name="margin" type="measure" string="Beneficio"/>
             </pivot>
@@ -17,7 +17,7 @@
         <field name="model">report.pos.order</field>
         <field name="arch" type="xml">
             <graph string="Beneficio por periodo" type="bar" sample="1">
-                <field name="date" interval="month"/>
+                <field name="date" interval="day"/>
                 <field name="margin" type="measure" string="Beneficio"/>
             </graph>
         </field>
@@ -35,6 +35,61 @@
                 <field name="price_subtotal_excl" optional="show" sum="Ventas sin impuestos"/>
                 <field name="margin" optional="show" sum="Beneficio"/>
             </list>
+        </field>
+    </record>
+
+    <record id="view_luis_botello_report_pos_order_margin_search" model="ir.ui.view">
+        <field name="name">luis.botello.report.pos.order.margin.search</field>
+        <field name="model">report.pos.order</field>
+        <field name="arch" type="xml">
+            <search string="Beneficio por periodo">
+                <field name="product_id"/>
+                <field name="product_categ_id"/>
+                <field name="config_id"/>
+                <field name="partner_id"/>
+                <field name="order_id"/>
+                <filter name="filter_today" string="Hoy"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time.min))]"/>
+                <filter name="filter_yesterday" string="Ayer"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=1), datetime.time.min)),
+                             ('date', '&lt;', datetime.datetime.combine(context_today(), datetime.time.min))]"/>
+                <separator/>
+                <filter name="filter_last_7_days" string="Últimos 7 días"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=6), datetime.time.min))]"/>
+                <filter name="filter_last_30_days" string="Últimos 30 días"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=29), datetime.time.min))]"/>
+                <filter name="filter_last_90_days" string="Últimos 90 días"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=89), datetime.time.min))]"/>
+                <separator/>
+                <filter name="filter_this_week" string="Esta semana"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=context_today().weekday()), datetime.time.min))]"/>
+                <filter name="filter_last_week" string="Semana pasada"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today() - relativedelta(days=context_today().weekday() + 7), datetime.time.min)),
+                             ('date', '&lt;', datetime.datetime.combine(context_today() - relativedelta(days=context_today().weekday()), datetime.time.min))]"/>
+                <filter name="filter_this_month" string="Este mes"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today().replace(day=1), datetime.time.min))]"/>
+                <filter name="filter_last_month" string="Mes pasado"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today().replace(day=1) - relativedelta(months=1), datetime.time.min)),
+                             ('date', '&lt;', datetime.datetime.combine(context_today().replace(day=1), datetime.time.min))]"/>
+                <filter name="filter_this_year" string="Este año"
+                    domain="[('date', '&gt;=', datetime.datetime.combine(context_today().replace(month=1, day=1), datetime.time.min))]"/>
+                <separator/>
+                <filter name="filter_date" string="Fecha personalizada" date="date"/>
+                <separator/>
+                <filter name="not_cancelled" string="No cancelados" domain="[('state', '!=', 'cancel')]"/>
+                <group>
+                    <filter name="group_day" string="Día" context="{'group_by': 'date:day'}"/>
+                    <filter name="group_week" string="Semana" context="{'group_by': 'date:week'}"/>
+                    <filter name="group_month" string="Mes" context="{'group_by': 'date:month'}"/>
+                    <filter name="group_quarter" string="Trimestre" context="{'group_by': 'date:quarter'}"/>
+                    <filter name="group_year" string="Año" context="{'group_by': 'date:year'}"/>
+                    <separator/>
+                    <filter name="group_config" string="Punto de venta" context="{'group_by': 'config_id'}"/>
+                    <filter name="group_categ" string="Categoría de producto" context="{'group_by': 'product_categ_id'}"/>
+                    <filter name="group_product" string="Producto" context="{'group_by': 'product_id'}"/>
+                    <filter name="group_user" string="Usuario" context="{'group_by': 'user_id'}"/>
+                </group>
+            </search>
         </field>
     </record>
 
@@ -58,12 +113,12 @@
             (0, 0, {'view_mode': 'pivot', 'view_id': ref('view_luis_botello_report_pos_order_margin_pivot')}),
             (0, 0, {'view_mode': 'graph', 'view_id': ref('view_luis_botello_report_pos_order_margin_graph')}),
             (0, 0, {'view_mode': 'list', 'view_id': ref('view_luis_botello_report_pos_order_margin_list')})]"/>
-        <field name="search_view_id" ref="point_of_sale.view_report_pos_order_search"/>
-        <field name="context">{'search_default_not_cancelled': 1}</field>
+        <field name="search_view_id" ref="view_luis_botello_report_pos_order_margin_search"/>
+        <field name="context">{'search_default_not_cancelled': 1, 'search_default_filter_last_30_days': 1, 'search_default_group_day': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Aún no hay pedidos TPV para analizar.</p>
-            <p>Beneficio = ventas sin impuestos - coste de los productos vendidos. Cambia el periodo
-            (día, semana, mes, año) desde el desplegable de la cabecera de columnas/filas.</p>
+            <p>Beneficio = ventas sin impuestos - coste de los productos vendidos. Elige el periodo en
+            Filtros (hoy, ayer, última semana, último mes...) y la agrupación en Agrupar por.</p>
         </field>
     </record>
 
