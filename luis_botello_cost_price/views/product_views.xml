@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="product_template_form_view_fixed_cost" model="ir.ui.view">
+        <field name="name">product.template.form.fixed.cost</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='standard_price_uom']" position="after">
+                <field name="fixed_cost" widget="monetary"
+                       invisible="type == 'combo'
+                                  or (not is_product_variant and (
+                                      product_variant_count &gt; 1
+                                      or (product_variant_count == 0 and is_dynamically_created)
+                                  ))"
+                       options="{'currency_field': 'cost_currency_id', 'field_digits': True}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Edición rápida de variante (Configurar variantes) -->
+    <record id="product_variant_easy_edit_view_fixed_cost" model="ir.ui.view">
+        <field name="name">product.product.easy.edit.fixed.cost</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_variant_easy_edit_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='standard_price']/.." position="after">
+                <field name="fixed_cost" widget="monetary"
+                       options="{'currency_field': 'cost_currency_id', 'field_digits': True}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Pestaña Compras: la columna Moneda de las tarifas de proveedor se puede ocultar -->
+    <record id="product_supplierinfo_tree_view2_currency_optional" model="ir.ui.view">
+        <field name="name">product.supplierinfo.list.view2.currency.optional</field>
+        <field name="model">product.supplierinfo</field>
+        <field name="inherit_id" ref="purchase.product_supplierinfo_tree_view2"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='currency_id']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

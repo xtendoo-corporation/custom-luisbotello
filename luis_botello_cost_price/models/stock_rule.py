@@ -5,10 +5,11 @@ class StockRule(models.Model):
     _inherit = 'stock.rule'
 
     def _update_purchase_order_line(self, product_id, product_qty, product_uom, company_id, values, line):
-        """Al fusionar una necesidad en una línea existente se mantiene el coste de la ficha."""
+        """Al fusionar una necesidad en una línea existente se aplica el mismo
+        criterio de precio que al crearla."""
         res = super()._update_purchase_order_line(
             product_id, product_qty, product_uom, company_id, values, line)
-        if res.get('price_unit') and values.get('supplier'):
+        if line._procurement_uses_product_cost(product_id, company_id, values, res.get('price_unit')):
             product_taxes = product_id.supplier_taxes_id.filtered_domain(
                 self.env['account.tax']._check_company_domain(company_id))
             res['price_unit'] = line._get_product_cost_price(
