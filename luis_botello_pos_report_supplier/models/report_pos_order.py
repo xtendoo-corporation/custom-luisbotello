@@ -7,7 +7,7 @@ class ReportPosOrder(models.Model):
     supplier_id = fields.Many2one('res.partner', string='Vendor', readonly=True)
     stock_qty = fields.Float(
         string='Stock', readonly=True, aggregator='max',
-        help='Current on-hand quantity in internal locations (all warehouses).')
+        help='Current on-hand quantity in the warehouse of the order\'s point of sale.')
 
     def _select(self):
         return super()._select() + """,
@@ -28,11 +28,18 @@ class ReportPosOrder(models.Model):
                     ORDER BY p2.id, (si.product_id IS NULL), si.sequence,
                              si.min_qty DESC, si.price, si.id
                 ) sup ON sup.product_id = p.id
+                LEFT JOIN pos_config pcfg ON pcfg.id = ps.config_id
+                LEFT JOIN stock_picking_type spt ON spt.id = pcfg.picking_type_id
                 LEFT JOIN (
-                    SELECT sq.product_id, SUM(sq.quantity) AS quantity
+                    SELECT sq.product_id, w.id AS warehouse_id,
+                           SUM(sq.quantity) AS quantity
                     FROM stock_quant sq
                     JOIN stock_location sl ON sl.id = sq.location_id
+                    JOIN stock_warehouse w ON w.active
+                    JOIN stock_location wl ON wl.id = w.view_location_id
+                     AND sl.parent_path LIKE wl.parent_path || '%%'
                     WHERE sl.usage = 'internal'
-                    GROUP BY sq.product_id
+                    GROUP BY sq.product_id, w.id
                 ) stk ON stk.product_id = p.id
+                     AND stk.warehouse_id = spt.warehouse_id
         """
