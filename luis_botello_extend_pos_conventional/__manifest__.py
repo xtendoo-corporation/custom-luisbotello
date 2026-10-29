@@ -29,6 +29,7 @@
     },
     "data": [
         "report/pos_order_report_inherit.xml",
+        "report/pos_session_sales_details_inherit.xml",
         "views/pos_config_views.xml",
         "views/res_config_settings_views.xml",
         "views/pos_order_hide_return_button.xml",

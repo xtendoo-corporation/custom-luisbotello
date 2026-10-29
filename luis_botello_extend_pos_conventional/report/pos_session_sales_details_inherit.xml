@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Importe con el símbolo de moneda del informe (usa `amount` y `currency`) -->
+    <template id="lb_report_money">
+        <t t-if="currency['position']">
+            <span t-out="amount" t-options="{'widget': 'float', 'precision': currency['precision']}"/><span t-out="currency['symbol']"/>
+        </t>
+        <t t-else="">
+            <span t-out="currency['symbol']"/><span t-out="amount" t-options="{'widget': 'float', 'precision': currency['precision']}"/>
+        </t>
+    </template>
+
+    <!--
+        Detalles de ventas de la sesión: el resumen (total, pagos, arqueo,
+        descuentos y notas) pasa de estar al final del informe a la cabecera.
+        Los bloques originales se mantienen en el árbol pero sin renderizarse,
+        para no romper los xpath de otros módulos (p. ej. #payments).
+    -->
+    <template id="pos_session_sales_details_summary_on_top"
+              inherit_id="point_of_sale.pos_session_sales_details">
+
+        <xpath expr="//div[@id='sales']" position="before">
+            <div id="lb_summary" style="break-inside: avoid; page-break-inside: avoid;">
+                <t t-set="lb_closed" t-value="state in ('closed', 'multiple') and payments"/>
+
+                <h6 class="bg-secondary p-1 fw-bold">Resumen de la sesión</h6>
+                <div class="row text-center mb-3">
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="text-muted small">Total vendido</div>
+                            <div class="fs-4 fw-bolder">
+                                <t t-set="amount" t-value="currency['total_paid']"/>
+                                <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="text-muted small">Nº de transacciones</div>
+                            <div class="fs-4 fw-bolder"><span t-out="nbr_orders">10</span></div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="text-muted small">
+                                Descuentos (<span t-out="discount_number">0</span>)
+                            </div>
+                            <div class="fs-4 fw-bolder">
+                                <t t-set="amount" t-value="discount_amount"/>
+                                <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div t-if="cash_rounding_total" class="mb-2">
+                    <strong>Redondeo de efectivo: </strong>
+                    <t t-set="amount" t-value="cash_rounding_total"/>
+                    <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                </div>
+
+                <t t-if="payments">
+                    <h6 class="bg-secondary p-1 fw-bold">Pagos y arqueo de caja</h6>
+                    <table class="table table-sm table-borderless">
+                        <thead>
+                            <tr>
+                                <th class="text-start">Método de pago</th>
+                                <th class="text-end">Cobrado</th>
+                                <th class="text-end">Esperado</th>
+                                <th t-if="lb_closed" class="text-end">Contado</th>
+                                <th t-if="lb_closed" class="text-end">Diferencia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="payments" t-as="method">
+                                <tr class="border-bottom">
+                                    <td class="fw-bold"><span t-out="method['name']">Efectivo</span></td>
+                                    <td class="text-end">
+                                        <t t-set="amount" t-value="method['total']"/>
+                                        <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                    </td>
+                                    <td class="text-end">
+                                        <t t-if="method['count']">
+                                            <t t-set="amount" t-value="method['final_count']"/>
+                                            <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                        </t>
+                                    </td>
+                                    <td t-if="lb_closed" class="text-end">
+                                        <t t-if="method['count']">
+                                            <t t-set="amount" t-value="method['money_counted']"/>
+                                            <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                        </t>
+                                    </td>
+                                    <td t-if="lb_closed" class="text-end">
+                                        <t t-if="method['count']">
+                                            <strong t-att-class="'text-danger' if method['money_difference'] else 'text-success'">
+                                                <t t-set="amount" t-value="method['money_difference']"/>
+                                                <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                            </strong>
+                                        </t>
+                                    </td>
+                                </tr>
+                                <tr t-if="lb_closed and method['count']" t-foreach="method['cash_moves']" t-as="move" class="text-muted small">
+                                    <td class="ps-4"><span t-out="move['name']">Movimiento de caja</span></td>
+                                    <td/>
+                                    <td class="text-end">
+                                        <t t-set="amount" t-value="move['amount']"/>
+                                        <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                    </td>
+                                    <td/>
+                                    <td/>
+                                </tr>
+                            </t>
+                            <tr class="fs-5 border-top">
+                                <th>Total</th>
+                                <th class="text-end">
+                                    <t t-set="amount" t-value="currency['total_paid']"/>
+                                    <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                </th>
+                                <th/>
+                                <th t-if="lb_closed"/>
+                                <th t-if="lb_closed"/>
+                            </tr>
+                            <tr t-if="show_payment_per_method" t-foreach="payments_per_method" t-as="ppm" class="text-muted">
+                                <td class="ps-4"><t t-out="ppm['name']"/></td>
+                                <td class="text-end">
+                                    <t t-set="amount" t-value="ppm['total']"/>
+                                    <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                </td>
+                                <td/>
+                                <td t-if="lb_closed"/>
+                                <td t-if="lb_closed"/>
+                            </tr>
+                        </tbody>
+                    </table>
+                </t>
+
+                <div t-if="opening_note or closing_note" style="break-inside: avoid;" class="mb-2">
+                    <div t-if="opening_note">
+                        <strong>Nota de apertura: </strong>
+                        <span t-out="opening_note" t-options="{'widget': 'text'}">Nota</span>
+                    </div>
+                    <div t-if="closing_note">
+                        <strong>Nota de cierre: </strong>
+                        <span t-out="closing_note" t-options="{'widget': 'text'}">Nota</span>
+                    </div>
+                </div>
+            </div>
+            <br/>
+        </xpath>
+
+        <!-- Bloques originales del final: ya están en el resumen superior -->
+        <xpath expr="//div[@id='payments']" position="attributes">
+            <attribute name="t-if">False</attribute>
+        </xpath>
+        <xpath expr="//div[@id='discounts']" position="attributes">
+            <attribute name="t-if">False</attribute>
+        </xpath>
+        <xpath expr="//t[@id='closing_session']" position="attributes">
+            <attribute name="t-if">False</attribute>
+        </xpath>
+    </template>
+</odoo>
