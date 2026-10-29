@@ -14,6 +14,11 @@ class PurchaseOrderLine(models.Model):
              "If empty, the destination of the operation type is used.",
     )
 
+    warehouse_id = fields.Many2one(
+        related='order_id.picking_type_id.warehouse_id',
+        string='Warehouse',
+    )
+
     seller_tiers_data = fields.Json(
         string='Vendor Tiers Data',
         compute='_compute_seller_tiers_data',

@@ -12,4 +12,19 @@
             </xpath>
         </field>
     </record>
+
+    <record id="purchase_history_tree_inherit_discount" model="ir.ui.view">
+        <field name="name">purchase.history.list.inherit.discount</field>
+        <field name="model">purchase.order.line</field>
+        <field name="inherit_id" ref="purchase.purchase_history_tree"/>
+        <field name="arch" type="xml">
+            <field name="partner_id" position="after">
+                <field name="warehouse_id" string="Almacén"/>
+            </field>
+            <field name="price_unit_product_uom" position="after">
+                <field name="discount" string="Desc. %"/>
+                <field name="price_unit_discounted" widget="monetary" string="Precio con descuento"/>
+            </field>
+        </field>
+    </record>
 </odoo>
