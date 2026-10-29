@@ -5,7 +5,7 @@
     'summary': 'Mostrar un wizard de entrada de asistencia justo después del login',
     'description': 'Al iniciar sesión muestra un wizard que dice "Realiza la entrada de asistencia"',
     'author': 'xtendoo',
-    'depends': ['web', 'hr_attendance'],
+    'depends': ['web', 'hr_attendance', 'point_of_sale'],
     'data': [
         'views/wizard_view.xml',
         'views/res_users_views.xml',

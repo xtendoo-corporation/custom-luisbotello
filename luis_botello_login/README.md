@@ -24,6 +24,11 @@ wizard puede desactivarse por usuario.
   wizard debe mostrarse.
 - Parche de `NavBar` (OWL) que consulta el endpoint al montar la barra de
   navegación y abre el wizard si corresponde.
+- Bloqueo en servidor de `pos.session`: un usuario con `require_attendance` no
+  puede abrir (`create`) ni continuar (`open_frontend_cb`) una sesión de TPV si su
+  empleado no tiene una asistencia abierta. Se muestra un error indicando que debe
+  fichar. Usuarios sin empleado asociado o con `require_attendance` desactivado
+  quedan exentos.
 - CSS para ocultar el botón de cierre del modal.
 - Ocultación del botón de cierre del modal mediante `MutationObserver`.
 
