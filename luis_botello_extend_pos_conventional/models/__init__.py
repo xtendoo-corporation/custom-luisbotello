@@ -6,3 +6,4 @@ from . import pos_order
 from . import pos_payment
 from . import product_product
 from . import pos_order_receipt
+from . import report_sale_details

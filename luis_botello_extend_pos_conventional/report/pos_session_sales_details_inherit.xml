@@ -52,6 +52,29 @@
                         </div>
                     </div>
                 </div>
+                <div t-if="lb_show_cash_boxes" class="row text-center mb-3">
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <div class="text-muted small">Caja inicial (apertura)</div>
+                            <div class="fs-4 fw-bolder">
+                                <t t-set="amount" t-value="lb_cash_opening"/>
+                                <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <div class="text-muted small">Caja al cierre (contada)</div>
+                            <div class="fs-4 fw-bolder">
+                                <t t-if="lb_cash_is_closed">
+                                    <t t-set="amount" t-value="lb_cash_closing"/>
+                                    <t t-call="luis_botello_extend_pos_conventional.lb_report_money"/>
+                                </t>
+                                <t t-else=""><span class="text-muted">Sesión abierta</span></t>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div t-if="cash_rounding_total" class="mb-2">
                     <strong>Redondeo de efectivo: </strong>
                     <t t-set="amount" t-value="cash_rounding_total"/>
@@ -99,7 +122,7 @@
                                         </t>
                                     </td>
                                 </tr>
-                                <tr t-if="lb_closed and method['count']" t-foreach="method['cash_moves']" t-as="move" class="text-muted small">
+                                <tr t-foreach="method.get('cash_moves') or [] if lb_closed and method['count'] else []" t-as="move" class="text-muted small">
                                     <td class="ps-4"><span t-out="move['name']">Movimiento de caja</span></td>
                                     <td/>
                                     <td class="text-end">
