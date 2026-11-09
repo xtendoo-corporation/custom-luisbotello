@@ -175,3 +175,31 @@ class TestWarehouseTransferPermissions(TransactionCase):
         self.assertEqual(
             picking.with_user(self.user_transfer_receiver).origin,
             'recepcionado por usuario autorizado')
+
+
+class TestProductPriceEditPermission(TransactionCase):
+
+    def setUp(self):
+        super().setUp()
+        group_user = self.env.ref('base.group_user')
+        group_price = self.env.ref('luis_botello_permisions.group_edit_product_price')
+        self.user_no = self.env['res.users'].create({
+            'name': 'Sin permiso precio', 'login': 'price_no',
+            'group_ids': [(6, 0, [group_user.id])],
+        })
+        self.user_yes = self.env['res.users'].create({
+            'name': 'Con permiso precio', 'login': 'price_yes',
+            'group_ids': [(6, 0, [group_user.id, group_price.id])],
+        })
+        self.product = self.env['product.template'].create({'name': 'Producto precio'})
+
+    def test_can_edit_list_price_flag(self):
+        self.assertFalse(self.product.with_user(self.user_no).can_edit_list_price)
+        self.assertTrue(self.product.with_user(self.user_yes).can_edit_list_price)
+
+    def test_form_view_price_readonly(self):
+        view = self.env.ref('luis_botello_permisions.product_template_form_view_price_readonly')
+        self.assertIn('not can_edit_list_price', view.arch)
+        form = self.env['product.template'].with_user(self.user_no).get_view(
+            self.env.ref('product.product_template_only_form_view').id, 'form')
+        self.assertIn('not can_edit_list_price', form['arch'])
