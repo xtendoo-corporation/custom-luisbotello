@@ -33,6 +33,7 @@
         "views/pos_config_views.xml",
         "views/res_config_settings_views.xml",
         "views/pos_order_hide_return_button.xml",
+        "views/pos_order_list_views.xml",
     ],
     "installable": True,
     "application": False,

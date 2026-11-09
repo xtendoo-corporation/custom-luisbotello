@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Lista de pedidos del TPV: añade la columna Método de pago -->
+    <record id="view_pos_order_list_payment_method" model="ir.ui.view">
+        <field name="name">pos.order.list.inherit.payment.method</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_order_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='amount_total']" position="before">
+                <field name="payment_method_names" string="Método de pago"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
