@@ -102,6 +102,15 @@
         </field>
     </record>
 
+    <!-- Análisis de pedidos: mostrar el producto sin el código interno [ref] -->
+    <record id="point_of_sale.action_report_pos_order_all" model="ir.actions.act_window">
+        <field name="context">{'group_by': [], 'search_default_not_cancelled': 1, 'display_default_code': False}</field>
+    </record>
+
+    <record id="point_of_sale.action_report_pos_order_all_filtered" model="ir.actions.act_window">
+        <field name="context">{'search_default_config_id': [active_id], 'default_config_id': active_id, 'display_default_code': False}</field>
+    </record>
+
     <record id="action_luis_botello_pos_margin_report" model="ir.actions.act_window">
         <field name="name">Beneficio por periodo</field>
         <field name="res_model">report.pos.order</field>
@@ -111,7 +120,7 @@
             (0, 0, {'view_mode': 'graph', 'view_id': ref('view_luis_botello_report_pos_order_margin_graph')}),
             (0, 0, {'view_mode': 'list', 'view_id': ref('view_luis_botello_report_pos_order_margin_list')})]"/>
         <field name="search_view_id" ref="view_luis_botello_report_pos_order_margin_search"/>
-        <field name="context">{'search_default_not_cancelled': 1, 'search_default_filter_last_30_days': 1, 'group_by': ['date:day']}</field>
+        <field name="context">{'search_default_not_cancelled': 1, 'search_default_filter_last_30_days': 1, 'group_by': ['date:day'], 'display_default_code': False}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Aún no hay pedidos TPV para analizar.</p>
             <p>Beneficio = ventas sin impuestos - coste de los productos vendidos. Elige el periodo en
