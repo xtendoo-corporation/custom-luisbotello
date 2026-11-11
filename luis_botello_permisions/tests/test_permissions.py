@@ -68,9 +68,26 @@ class TestWarehouseTransferPermissions(TransactionCase):
             'luis_botello_permisions.group_warehouse_transfer')
         self.group_transfer_receiver = self.env.ref(
             'luis_botello_permisions.group_warehouse_transfer_receiver')
-        self.pt_internal = self.env.ref('stock.picking_type_internal')
-        self.pt_in = self.env.ref('stock.picking_type_in')
-        self.loc_stock = self.env.ref('stock.stock_location_stock')
+        warehouse = self.env['stock.warehouse'].search(
+            [('company_id', '=', self.env.company.id)], limit=1)
+        self.loc_stock = warehouse.lot_stock_id
+        # Tipos propios: en bases reales los estándar pueden estar archivados.
+        self.pt_internal = self.env['stock.picking.type'].create({
+            'name': 'Test traspaso interno',
+            'code': 'internal',
+            'sequence_code': 'TINT',
+            'warehouse_id': warehouse.id,
+            'default_location_src_id': self.loc_stock.id,
+            'default_location_dest_id': self.loc_stock.id,
+        })
+        self.pt_in = self.env['stock.picking.type'].create({
+            'name': 'Test recepcion',
+            'code': 'incoming',
+            'sequence_code': 'TIN',
+            'warehouse_id': warehouse.id,
+            'default_location_src_id': self.env.ref('stock.stock_location_suppliers').id,
+            'default_location_dest_id': self.loc_stock.id,
+        })
         self.loc_suppliers = self.env.ref('stock.stock_location_suppliers')
 
         # Usuario de inventario SIN permiso de traspasos.
@@ -177,6 +194,31 @@ class TestWarehouseTransferPermissions(TransactionCase):
             'recepcionado por usuario autorizado')
 
 
+    def test_16_all_special_permissions_work_together(self):
+        """Con los tres permisos a la vez, cada uno sigue funcionando."""
+        user = self.env['res.users'].create({
+            'name': 'Todos los permisos',
+            'login': 'stock_user_all_special',
+            'email': 'all_special@test.com',
+            'group_ids': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('luis_botello_permisions.group_show_margin').id,
+                self.group_transfer.id,
+                self.group_transfer_receiver.id,
+            ])],
+        })
+        # Los tres grupos están activos a la vez
+        for xmlid in ('group_show_margin', 'group_warehouse_transfer',
+                      'group_warehouse_transfer_receiver'):
+            self.assertTrue(user.has_group('luis_botello_permisions.' + xmlid))
+        # Traspasos: puede crear y recepcionar (escribir) un interno
+        picking = self.env['stock.picking'].with_user(user).create(
+            self._internal_vals())
+        picking.write({'note': 'recepcionado'})
+        # Márgenes: el grupo de márgenes sigue activo junto a los de stock
+        self.assertTrue(user.has_group('luis_botello_permisions.group_show_margin'))
+
+
 class TestProductPriceEditPermission(TransactionCase):
 
     def setUp(self):
@@ -203,3 +245,20 @@ class TestProductPriceEditPermission(TransactionCase):
         form = self.env['product.template'].with_user(self.user_no).get_view(
             self.env.ref('product.product_template_only_form_view').id, 'form')
         self.assertIn('not can_edit_list_price', form['arch'])
+
+    def test_99_special_permissions_are_independent_checkboxes(self):
+        """Los permisos especiales tienen privilegio propio y se pueden combinar."""
+        groups = (
+            self.env.ref('luis_botello_permisions.group_show_margin')
+            | self.env.ref('luis_botello_permisions.group_warehouse_transfer')
+            | self.env.ref('luis_botello_permisions.group_warehouse_transfer_receiver')
+        )
+        # Un privilegio distinto por grupo: selectores independientes
+        self.assertEqual(len(groups.mapped('privilege_id')), len(groups))
+        user = self.env['res.users'].create({
+            'name': 'Todos los permisos',
+            'login': 'user_all_special',
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id] + groups.ids)],
+        })
+        for group in groups:
+            self.assertIn(group, user.group_ids)
