@@ -25,6 +25,10 @@
             "luis_botello_extend_pos_conventional/static/src/js/closing_popup_patch.js",
             "luis_botello_extend_pos_conventional/static/src/xml/closing_popup_patch.xml",
             "luis_botello_extend_pos_conventional/static/src/js/hide_return_button_backend.js",
+            "luis_botello_extend_pos_conventional/static/src/js/cash_calculator_enter_next.js",
+        ],
+        "web.assets_unit_tests": [
+            "luis_botello_extend_pos_conventional/static/tests/**/*.test.js",
         ],
     },
     "data": [
