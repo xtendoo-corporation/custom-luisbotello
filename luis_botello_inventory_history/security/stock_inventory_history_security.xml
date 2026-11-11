@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="stock_inventory_history_company_rule" model="ir.rule">
+        <field name="name">Conteo de inventario: multi-compañía</field>
+        <field name="model_id" ref="model_stock_inventory_history"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="stock_inventory_history_line_company_rule" model="ir.rule">
+        <field name="name">Línea de conteo de inventario: multi-compañía</field>
+        <field name="model_id" ref="model_stock_inventory_history_line"/>
+        <field name="domain_force">[('history_id.company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>
