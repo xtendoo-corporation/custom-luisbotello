@@ -73,3 +73,19 @@ class TestInventoryHistory(TransactionCase):
         with self.assertRaises(AccessError):
             self.env['stock.inventory.history'].with_user(user).create({'name': 'x'})
         self.assertTrue(quant)
+
+    def test_total_value_uses_counted_qty_and_cost(self):
+        self.product.standard_price = 3.0
+        self.product_ok.standard_price = 10.0
+        q1 = self._set_stock(self.product, 4)
+        q2 = self._set_stock(self.product_ok, 1)
+        q1.inventory_quantity = 2
+        q2.inventory_quantity = 1
+        (q1 | q2).action_apply_inventory()
+        line = self._history(self.product)[0]
+        self.assertEqual(line.unit_cost, 3.0)
+        self.assertEqual(line.counted_value, 6.0)
+        self.assertEqual(line.history_id.total_value, 6.0 + 10.0)
+        # El coste guardado no cambia si el producto cambia de coste después
+        self.product.standard_price = 99.0
+        self.assertEqual(line.unit_cost, 3.0)

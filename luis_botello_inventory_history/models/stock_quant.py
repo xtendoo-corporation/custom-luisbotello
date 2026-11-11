@@ -32,6 +32,8 @@ class StockQuant(models.Model):
                 'theoretical_qty': theoretical,
                 'counted_qty': counted,
                 'difference_qty': counted - theoretical,
+                'unit_cost': quant.product_id.with_company(
+                    quant.company_id).standard_price,
             })
         return grouped
 

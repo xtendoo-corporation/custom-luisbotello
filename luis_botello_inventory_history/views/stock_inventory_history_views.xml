@@ -11,6 +11,8 @@
                 <field name="user_id"/>
                 <field name="line_count" sum="Productos"/>
                 <field name="diff_line_count" sum="Con diferencia"/>
+                <field name="total_value" sum="Valor total"/>
+                <field name="currency_id" column_invisible="True"/>
                 <field name="company_id" groups="base.group_multi_company" optional="hide"/>
             </list>
         </field>
@@ -36,6 +38,8 @@
                             <field name="user_id"/>
                             <field name="line_count"/>
                             <field name="diff_line_count"/>
+                            <field name="total_value"/>
+                            <field name="currency_id" invisible="1"/>
                             <field name="company_id" groups="base.group_multi_company"/>
                         </group>
                     </group>
@@ -49,6 +53,9 @@
                             <field name="theoretical_qty"/>
                             <field name="counted_qty"/>
                             <field name="difference_qty"/>
+                            <field name="unit_cost" optional="show"/>
+                            <field name="counted_value" sum="Valor total" optional="show"/>
+                            <field name="currency_id" column_invisible="True"/>
                             <field name="uom_id" optional="hide"/>
                         </list>
                     </field>

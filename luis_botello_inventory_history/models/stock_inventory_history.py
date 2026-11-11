@@ -21,13 +21,20 @@ class StockInventoryHistory(models.Model):
         default=lambda self: self.env.company)
     line_ids = fields.One2many(
         'stock.inventory.history.line', 'history_id', 'Líneas', readonly=True)
+    currency_id = fields.Many2one(
+        related='company_id.currency_id', string='Moneda', store=True)
+    total_value = fields.Monetary(
+        'Valor total del inventario', compute='_compute_counts', store=True,
+        currency_field='currency_id',
+        help='Suma de cantidad contada × coste unitario en el momento del conteo.')
     line_count = fields.Integer('Productos contados', compute='_compute_counts', store=True)
     diff_line_count = fields.Integer('Con diferencia', compute='_compute_counts', store=True)
 
-    @api.depends('line_ids', 'line_ids.difference_qty')
+    @api.depends('line_ids', 'line_ids.difference_qty', 'line_ids.counted_value')
     def _compute_counts(self):
         for doc in self:
             doc.line_count = len(doc.line_ids)
+            doc.total_value = sum(doc.line_ids.mapped('counted_value'))
             doc.diff_line_count = len(doc.line_ids.filtered(
                 lambda line: line.difference_qty))
 
@@ -51,3 +58,16 @@ class StockInventoryHistoryLine(models.Model):
     theoretical_qty = fields.Float('Cantidad anterior', readonly=True)
     counted_qty = fields.Float('Cantidad contada', readonly=True)
     difference_qty = fields.Float('Diferencia', readonly=True)
+    currency_id = fields.Many2one(
+        related='history_id.currency_id', string='Moneda', store=True)
+    unit_cost = fields.Monetary(
+        'Coste unitario', readonly=True, currency_field='currency_id',
+        help='Coste del producto en el momento del conteo.')
+    counted_value = fields.Monetary(
+        'Valor contado', compute='_compute_counted_value', store=True,
+        currency_field='currency_id')
+
+    @api.depends('counted_qty', 'unit_cost')
+    def _compute_counted_value(self):
+        for line in self:
+            line.counted_value = line.counted_qty * line.unit_cost
