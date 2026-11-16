@@ -36,6 +36,7 @@
                 <field name="product_qty" optional="show" sum="Cantidad"/>
                 <field name="price_subtotal_excl" optional="show" sum="Ventas sin impuestos"/>
                 <field name="total_cost" optional="show" sum="Coste"/>
+                <field name="unit_cost" optional="show" avg="Coste unidad"/>
                 <field name="margin" optional="show" sum="Beneficio"/>
             </list>
         </field>
@@ -97,6 +98,7 @@
         <field name="arch" type="xml">
             <field name="price_total" position="after">
                 <field name="total_cost" type="measure"/>
+                <field name="unit_cost" type="measure"/>
                 <field name="margin" type="measure"/>
             </field>
         </field>

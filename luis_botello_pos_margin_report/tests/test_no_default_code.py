@@ -30,3 +30,17 @@ class TestNoDefaultCode(TransactionCase):
         self.assertEqual(
             product.with_context(display_default_code=True).display_name,
             '[REF01] Producto test')
+
+
+@tagged('post_install', '-at_install')
+class TestUnitCost(TransactionCase):
+
+    def test_unit_cost_field(self):
+        field = self.env['report.pos.order']._fields['unit_cost']
+        self.assertEqual(field.aggregator, 'avg')
+        self.assertEqual(field.string, 'Coste unidad')
+
+    def test_unit_cost_query(self):
+        Report = self.env['report.pos.order']
+        self.assertIn('unit_cost', Report._select())
+        Report.search([], limit=5).read(['unit_cost', 'total_cost', 'product_qty'])

@@ -5,10 +5,15 @@ class ReportPosOrder(models.Model):
     _inherit = 'report.pos.order'
 
     total_cost = fields.Float(string='Coste', readonly=True)
+    unit_cost = fields.Float(
+        string='Coste unidad', readonly=True, aggregator='avg',
+        help='Coste de una sola unidad (coste total de la línea / cantidad).')
 
     def _select(self):
         return super()._select() + """,
-                COALESCE(l.total_cost, 0) / COALESCE(NULLIF(s.currency_rate, 0), 1.0) AS total_cost
+                COALESCE(l.total_cost, 0) / COALESCE(NULLIF(s.currency_rate, 0), 1.0) AS total_cost,
+                COALESCE(l.total_cost, 0) / NULLIF(l.qty, 0)
+                    / COALESCE(NULLIF(s.currency_rate, 0), 1.0) AS unit_cost
         """
 
     # El pivot/graph agrupa por producto: mostrar el nombre sin el código [ref],
