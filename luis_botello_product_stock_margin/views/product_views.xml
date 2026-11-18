@@ -45,13 +45,13 @@
         <field name="inherit_id" ref="product.product_template_form_view"/>
         <field name="arch" type="xml">
             <xpath expr="//div[@name='standard_price_uom']" position="after">
-                <label for="margin_amount" string="Margen de beneficio"
+                <label for="margin_amount" string="Margen de beneficio" groups="luis_botello_permisions.group_show_margin"
                        invisible="type == 'combo'
                                   or (not is_product_variant and (
                                       product_variant_count &gt; 1
                                       or (product_variant_count == 0 and is_dynamically_created)
                                   ))"/>
-                <div name="margin_info"
+                <div name="margin_info" groups="luis_botello_permisions.group_show_margin"
                      invisible="type == 'combo'
                                 or (not is_product_variant and (
                                     product_variant_count &gt; 1

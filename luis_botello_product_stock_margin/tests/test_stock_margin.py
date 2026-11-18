@@ -33,3 +33,13 @@ class TestStockMargin(BaseCommon):
         quants = self.env['stock.quant'].search(action['domain'])
         self.assertEqual(sum(quants.mapped('quantity')), 7.0)
         self.assertEqual(quants.warehouse_id, wh)
+
+    def test_margin_restricted_to_margin_group(self):
+        """El margen deja deducir el coste: solo para «Mostrar Márgenes y Costes»."""
+        group = 'luis_botello_permisions.group_show_margin'
+        fields_ = self.env['product.template']._fields
+        self.assertEqual(fields_['margin_amount'].groups, group)
+        self.assertEqual(fields_['margin_percent'].groups, group)
+        view = self.env.ref(
+            'luis_botello_product_stock_margin.product_template_form_view_margin')
+        self.assertIn(group, view.arch_db)

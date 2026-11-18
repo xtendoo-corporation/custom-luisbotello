@@ -8,12 +8,14 @@ class ProductTemplate(models.Model):
         string='Margen',
         compute='_compute_margin',
         currency_field='currency_id',
+        groups='luis_botello_permisions.group_show_margin',
         help="Precio de venta menos coste.",
     )
     margin_percent = fields.Float(
         string='Margen (%)',
         compute='_compute_margin',
         digits=(16, 2),
+        groups='luis_botello_permisions.group_show_margin',
         help="Margen sobre el precio de venta: (precio - coste) / precio.",
     )
 

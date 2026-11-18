@@ -5,7 +5,7 @@
     'summary': 'Botón «Ver stock» (desglose por almacén) y margen de beneficio en la ficha del producto',
     'author': 'Xtendoo',
     'license': 'LGPL-3',
-    'depends': ['stock'],
+    'depends': ['stock', 'luis_botello_permisions'],
     'data': [
         'views/product_views.xml',
     ],
