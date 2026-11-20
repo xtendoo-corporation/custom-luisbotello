@@ -1,6 +1,13 @@
 from odoo import api, fields, models
 
 
+class NonGroupableChar(fields.Char):
+    """Char que no se ofrece para agrupar (el código solo se muestra/busca)."""
+
+    def _description_groupable(self, env):
+        return False
+
+
 class ReportPosOrder(models.Model):
     _inherit = 'report.pos.order'
 
@@ -9,8 +16,11 @@ class ReportPosOrder(models.Model):
         string='Coste unidad', readonly=True, aggregator='avg',
         help='Coste de una sola unidad (coste total de la línea / cantidad).')
 
+    product_default_code = NonGroupableChar(string='Código de producto', readonly=True)
+
     def _select(self):
         return super()._select() + """,
+                p.default_code AS product_default_code,
                 COALESCE(l.total_cost, 0) / COALESCE(NULLIF(s.currency_rate, 0), 1.0) AS total_cost,
                 COALESCE(l.total_cost, 0) / NULLIF(l.qty, 0)
                     / COALESCE(NULLIF(s.currency_rate, 0), 1.0) AS unit_cost
@@ -23,7 +33,6 @@ class ReportPosOrder(models.Model):
         return super(ReportPosOrder, self.with_context(
             display_default_code=False)).formatted_read_group(*args, **kwargs)
 
-    @api.model
     @api.model
     def formatted_read_grouping_sets(self, *args, **kwargs):
         return super(ReportPosOrder, self.with_context(
